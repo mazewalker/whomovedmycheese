@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Who Moved My Cheese? - The Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="screen active">
+        <div class="loading-content">
+            <div class="cheese-loader">🧀</div>
+            <h1>Who Moved My Cheese?</h1>
+            <p class="subtitle">The Game of Adaptation</p>
+            <div class="loader-bar">
+                <div class="loader-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="main-menu" class="screen">
+        <div class="menu-container">
+            <div class="logo-section">
+                <div class="logo-cheese">🧀</div>
+                <h1>Who Moved My Cheese?</h1>
+                <p class="tagline">Adapt to change. Find your cheese.</p>
+            </div>
+            
+            <div class="menu-buttons">
+                <button class="btn btn-primary" onclick="showCharacterSelect()">
+                    <span class="btn-icon">🎮</span> Play Game
+                </button>
+                <button class="btn btn-secondary" onclick="showInstructions()">
+                    <span class="btn-icon">📖</span> How to Play
+                </button>
+                <button class="btn btn-secondary" onclick="showLeaderboard()">
+                    <span class="btn-icon">🏆</span> Leaderboard
+                </button>
+            </div>
+
+            <div class="characters-preview">
+                <h3>Choose Your Cheese Eater</h3>
+                <div class="char-grid" id="menu-char-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Character Select -->
+    <div id="character-select" class="screen">
+        <div class="select-container">
+            <h2>Choose Your Character</h2>
+            <p class="select-subtitle">Each cheese eater has unique abilities!</p>
+            <div class="char-grid" id="char-grid"></div>
+            <button class="btn btn-primary" onclick="showMainMenu()">← Back</button>
+        </div>
+    </div>
+
+    <!-- Difficulty Select -->
+    <div id="difficulty-select" class="screen">
+        <div class="select-container">
+            <h2>Select Difficulty</h2>
+            <p class="select-subtitle">How much will the cheese move?</p>
+            <div class="difficulty-grid">
+                <button class="btn btn-easy" onclick="startGame('easy')">
+                    <span class="diff-icon">🐭</span>
+                    <h3>Easy</h3>
+                    <p>Cheese moves occasionally<br>Perfect for beginners!</p>
+                </button>
+                <button class="btn btn-medium" onclick="startGame('medium')">
+                    <span class="diff-icon">🐹</span>
+                    <h3>Medium</h3>
+                    <p>Cheese moves regularly<br>Test your adaptability!</p>
+                </button>
+                <button class="btn btn-hard" onclick="startGame('hard')">
+                    <span class="diff-icon">🦁</span>
+                    <h3>Hard</h3>
+                    <p>Cheese moves constantly<br>Only for the brave!</p>
+                </button>
+            </div>
+            <button class="btn btn-secondary" onclick="showCharacterSelect()">← Back</button>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+        <div class="game-container">
+            <div class="game-header">
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-icon">🧀</span>
+                        <span class="stat-value" id="score">0</span>
+                        <span class="stat-label">Score</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-icon">⏱️</span>
+                        <span class="stat-value" id="timer">60</span>
+                        <span class="stat-label">Time</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-icon">📊</span>
+                        <span class="stat-value" id="level">1</span>
+                        <span class="stat-label">Level</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-icon">🏅</span>
+                        <span class="stat-value" id="lives">3</span>
+                        <span class="stat-label">Lives</span>
+                    </div>
+                </div>
+                <button class="btn btn-small" onclick="pauseGame()">⏸️ Pause</button>
+            </div>
+
+            <div class="game-info-bar">
+                <div class="quote-box" id="quote-box">
+                    <p id="maze-quote">"The faster you let go of old cheese, the sooner you find new cheese."</p>
+                </div>
+                <div class="cheese-status">
+                    <span class="status-label">Cheese Status:</span>
+                    <span class="status-indicator" id="cheese-status">🟢 Stable</span>
+                </div>
+            </div>
+
+            <div class="maze-wrapper">
+                <canvas id="maze-canvas"></canvas>
+                <div class="player-hint" id="player-hint">Use Arrow Keys or WASD to move</div>
+            </div>
+
+            <div class="game-footer">
+                <button class="btn btn-small" onclick="showMainMenu()">🏠 Menu</button>
+                <button class="btn btn-small" onclick="restartGame()">🔄 Restart</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pause-screen" class="screen">
+        <div class="pause-container">
+            <h2>⏸️ Paused</h2>
+            <p>Take a deep breath. Change is inevitable.</p>
+            <div class="pause-buttons">
+                <button class="btn btn-primary" onclick="resumeGame()">▶️ Resume</button>
+                <button class="btn btn-secondary" onclick="restartGame()">🔄 Restart</button>
+                <button class="btn btn-secondary" onclick="showMainMenu()">🏠 Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="screen">
+        <div class="gameover-container">
+            <div class="result-icon" id="result-icon">🏆</div>
+            <h2 id="result-title">Game Over!</h2>
+            <p class="result-quote" id="result-quote">"Everyone is changing their cheese. The question is, are you?"</p>
+            
+            <div class="final-stats">
+                <div class="final-stat">
+                    <span class="final-value" id="final-score">0</span>
+                    <span class="final-label">Final Score</span>
+                </div>
+                <div class="final-stat">
+                    <span class="final-value" id="final-level">1</span>
+                    <span class="final-label">Level Reached</span>
+                </div>
+                <div class="final-stat">
+                    <span class="final-value" id="final-cheese">0</span>
+                    <span class="final-label">Cheese Collected</span>
+                </div>
+            </div>
+
+            <div class="gameover-buttons">
+                <button class="btn btn-primary" onclick="restartGame()">🔄 Play Again</button>
+                <button class="btn btn-secondary" onclick="showMainMenu()">🏠 Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructions Modal -->
+    <div id="instructions-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('instructions-modal')">✕</button>
+            <h2>📖 How to Play</h2>
+            <div class="instructions-content">
+                <div class="instruction-section">
+                    <h3>🎯 Objective</h3>
+                    <p>Navigate your character through the maze to collect cheese before time runs out! But beware - the cheese moves, just like in real life!</p>
+                </div>
+                <div class="instruction-section">
+                    <h3>🕹️ Controls</h3>
+                    <ul>
+                        <li><strong>Arrow Keys / WASD:</strong> Move your character</li>
+                        <li><strong>Space:</strong> Pause the game</li>
+                    </ul>
+                </div>
+                <div class="instruction-section">
+                    <h3>🧀 Cheese Mechanics</h3>
+                    <ul>
+                        <li>Cheese appears in random locations in the maze</li>
+                        <li>The cheese will move periodically - watch for the warning!</li>
+                        <li>Collect cheese before it moves to earn points</li>
+                        <li>Different cheese types give different scores</li>
+                    </ul>
+                </div>
+                <div class="instruction-section">
+                    <h3>⭐ Scoring</h3>
+                    <ul>
+                        <li><strong>🧀 Regular Cheese:</strong> 10 points</li>
+                        <li><strong>🧀🧀 Double Cheese:</strong> 25 points</li>
+                        <li><strong>✨ Golden Cheese:</strong> 50 points (rare!)</li>
+                        <li><strong>⚡ Speed Bonus:</strong> Collect cheese quickly for extra points!</li>
+                    </ul>
+                </div>
+                <div class="instruction-section">
+                    <h3>💡 Tips</h3>
+                    <ul>
+                        <li>Watch the cheese status indicator - it warns when cheese is about to move</li>
+                        <li>Plan your route ahead - don't just react, anticipate!</li>
+                        <li>Each level gets harder - the maze changes and cheese moves faster</li>
+                        <li>"The only thing that is constant is change" - adapt or fall behind!</li>
+                    </ul>
+                </div>
+                <div class="instruction-section">
+                    <h3>📚 The Lesson</h3>
+                    <p>Just like in Spencer Johnson's book, this game teaches us to:</p>
+                    <ul>
+                        <li>Anticipate change</li>
+                        <li>Adapt quickly</li>
+                        <li>Enjoy the adventure</li>
+                        <li>Be ready to change again and again</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaderboard Modal -->
+    <div id="leaderboard-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('leaderboard-modal')">✕</button>
+            <h2>🏆 Leaderboard</h2>
+            <div class="leaderboard-tabs">
+                <button class="tab active" onclick="switchLeaderboardTab('easy')">Easy</button>
+                <button class="tab" onclick="switchLeaderboardTab('medium')">Medium</button>
+                <button class="tab" onclick="switchLeaderboardTab('hard')">Hard</button>
+            </div>
+            <div class="leaderboard-list" id="leaderboard-list"></div>
+        </div>
+    </div>
+
+    <!-- Name Entry Modal -->
+    <div id="name-modal" class="modal">
+        <div class="modal-content name-entry">
+            <h2>🎉 Great Job!</h2>
+            <p>Enter your name for the leaderboard:</p>
+            <input type="text" id="player-name" placeholder="Your Name" maxlength="20">
+            <button class="btn btn-primary" onclick="saveScore()">Save Score</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
