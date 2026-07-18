@@ -20,6 +20,10 @@ const GameState = {
     mazeHeight: 0,
     cellSize: 0,
     player: { x: 0, y: 0 },
+    multiplayer: false,
+    selectedCharacter2: null,
+    player2: { x: 0, y: 0 },
+    score2: 0,
     cheese: { x: 0, y: 0, type: 'regular', moving: false, warningTimer: 0 },
     cheeseMoveInterval: null,
     gameTimer: null,
@@ -102,8 +106,33 @@ function showMainMenu() {
 }
 
 function showCharacterSelect() {
+    GameState.selectedCharacter = null;
+    GameState.selectedCharacter2 = null;
     showScreen('character-select');
     populateCharacterGrid();
+    updateCharSelectSubtitle();
+}
+
+function startSinglePlayerSelect() {
+    GameState.multiplayer = false;
+    showCharacterSelect();
+}
+
+function startMultiplayerSelect() {
+    GameState.multiplayer = true;
+    showCharacterSelect();
+}
+
+function updateCharSelectSubtitle() {
+    const subtitle = document.getElementById('select-subtitle');
+    if (!subtitle) return;
+    if (!GameState.multiplayer) {
+        subtitle.textContent = 'Each cheese eater has unique abilities!';
+    } else if (!GameState.selectedCharacter) {
+        subtitle.textContent = 'Player 1: choose your character (Arrow Keys)';
+    } else {
+        subtitle.textContent = 'Player 2: choose your character (WASD)';
+    }
 }
 
 function showInstructions() {
@@ -132,6 +161,8 @@ function populateMenuCharacters() {
             <div class="char-name">${char.name}</div>
         `;
         card.onclick = () => {
+            GameState.multiplayer = false;
+            GameState.selectedCharacter2 = null;
             GameState.selectedCharacter = key;
             showScreen('difficulty-select');
         };
@@ -142,10 +173,10 @@ function populateMenuCharacters() {
 function populateCharacterGrid() {
     const grid = document.getElementById('char-grid');
     grid.innerHTML = '';
-    
+
     Object.entries(GameState.characters).forEach(([key, char]) => {
         const card = document.createElement('div');
-        card.className = 'char-card';
+        card.className = 'char-card' + (key === GameState.selectedCharacter ? ' selected' : '');
         card.style.cursor = 'pointer';
         card.innerHTML = `
             <div class="char-icon">${char.icon}</div>
@@ -153,12 +184,29 @@ function populateCharacterGrid() {
             <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">${char.description}</p>
             <p style="font-size: 0.75rem; color: var(--primary); margin-top: 0.5rem;">${char.ability}</p>
         `;
-        card.onclick = () => {
-            GameState.selectedCharacter = key;
-            showScreen('difficulty-select');
-        };
+        card.onclick = () => selectCharacter(key);
         grid.appendChild(card);
     });
+}
+
+function selectCharacter(key) {
+    if (!GameState.multiplayer) {
+        GameState.selectedCharacter = key;
+        showScreen('difficulty-select');
+        return;
+    }
+
+    if (!GameState.selectedCharacter) {
+        GameState.selectedCharacter = key;
+        populateCharacterGrid();
+        updateCharSelectSubtitle();
+        return;
+    }
+
+    if (key === GameState.selectedCharacter) return; // players need different characters
+
+    GameState.selectedCharacter2 = key;
+    showScreen('difficulty-select');
 }
 
 // --- Maze Generation (Recursive Backtracker) ---
@@ -224,56 +272,68 @@ function removeWall(maze, current, next) {
 function startGame(difficulty) {
     GameState.difficulty = difficulty;
     GameState.score = 0;
+    GameState.score2 = 0;
     GameState.level = 1;
     GameState.cheeseCollected = 0;
-    
+
     // Set lives based on character ability
-    if (GameState.selectedCharacter === 'hem') {
-        GameState.lives = 4; // Hem gets +1 life
-    } else {
-        GameState.lives = 3;
-    }
-    
+    GameState.lives = GameState.selectedCharacter === 'hem' ? 4 : 3; // Hem gets +1 life
+
     // Set time based on difficulty
     switch (difficulty) {
         case 'easy': GameState.timeLeft = 90; break;
         case 'medium': GameState.timeLeft = 60; break;
         case 'hard': GameState.timeLeft = 45; break;
     }
-    
+
     // Set maze size based on level
     updateMazeSize();
-    
+
     // Generate maze
     GameState.maze = generateMaze(GameState.mazeWidth, GameState.mazeHeight);
-    
-    // Place player at start
+
+    // Place players at opposite corners of the start
     GameState.player = { x: 0, y: 0 };
-    
+    GameState.player2 = { x: GameState.mazeWidth - 1, y: GameState.mazeHeight - 1 };
+
     // Place cheese at farthest point
     placeCheese();
-    
+
     // Setup canvas
     setupCanvas();
-    
+
     // Start game
     GameState.isPlaying = true;
     GameState.isPaused = false;
     showScreen('game-screen');
-    
+
+    toggleMultiplayerUI();
     updateUI();
     updateQuote();
     drawGame();
-    
+
     // Start timers
     startGameTimer();
     startCheeseMovement();
-    
+
     // Hide hint after 3 seconds
+    const hint = document.getElementById('player-hint');
+    if (hint) {
+        hint.textContent = GameState.multiplayer
+            ? 'P1: Arrow Keys · P2: WASD'
+            : 'Use Arrow Keys or WASD to move';
+        hint.style.display = '';
+    }
     setTimeout(() => {
-        const hint = document.getElementById('player-hint');
         if (hint) hint.style.display = 'none';
     }, 3000);
+}
+
+function toggleMultiplayerUI() {
+    const p2Stats = document.getElementById('p2-stats');
+    if (p2Stats) p2Stats.style.display = GameState.multiplayer ? 'flex' : 'none';
+    const scoreLabel = document.getElementById('score-label');
+    if (scoreLabel) scoreLabel.textContent = GameState.multiplayer ? 'P1 Score' : 'Score';
 }
 
 function updateMazeSize() {
@@ -477,11 +537,15 @@ function moveCheese() {
             newY = move.y;
         }
         
-        // Don't place cheese on player
-        if (newX === GameState.player.x && newY === GameState.player.y) {
+        // Don't place cheese on a player
+        const onPlayer = (x, y) =>
+            (x === GameState.player.x && y === GameState.player.y) ||
+            (GameState.multiplayer && x === GameState.player2.x && y === GameState.player2.y);
+
+        if (onPlayer(newX, newY)) {
             // Try to find another spot
             for (const move of possibleMoves) {
-                if (!(move.x === GameState.player.x && move.y === GameState.player.y)) {
+                if (!onPlayer(move.x, move.y)) {
                     newX = move.x;
                     newY = move.y;
                     break;
@@ -560,14 +624,20 @@ function drawGame() {
     
     // Draw cheese path hint for Haw
     if (GameState.selectedCharacter === 'haw') {
-        drawCheesePath();
+        drawCheesePath(GameState.player);
     }
-    
+    if (GameState.multiplayer && GameState.selectedCharacter2 === 'haw') {
+        drawCheesePath(GameState.player2);
+    }
+
     // Draw cheese
     drawCheese();
-    
-    // Draw player
-    drawPlayer();
+
+    // Draw players
+    drawPlayer(GameState.player, GameState.selectedCharacter);
+    if (GameState.multiplayer) {
+        drawPlayer(GameState.player2, GameState.selectedCharacter2);
+    }
 }
 
 function drawCheese() {
@@ -609,11 +679,11 @@ function drawCheese() {
     ctx.fillText(cheeseEmoji, cx, cy);
 }
 
-function drawPlayer() {
+function drawPlayer(player, characterKey) {
     const cs = GameState.cellSize;
-    const char = GameState.characters[GameState.selectedCharacter];
-    const px = GameState.player.x * cs + cs / 2;
-    const py = GameState.player.y * cs + cs / 2;
+    const char = GameState.characters[characterKey];
+    const px = player.x * cs + cs / 2;
+    const py = player.y * cs + cs / 2;
     const size = cs * 0.4;
     
     // Glow effect
@@ -630,11 +700,11 @@ function drawPlayer() {
     ctx.fillText(char.icon, px, py);
 }
 
-function drawCheesePath() {
+function drawCheesePath(player) {
     // Simple path visualization for Haw's ability
     const cs = GameState.cellSize;
-    const startX = GameState.player.x * cs + cs / 2;
-    const startY = GameState.player.y * cs + cs / 2;
+    const startX = player.x * cs + cs / 2;
+    const startY = player.y * cs + cs / 2;
     const endX = GameState.cheese.x * cs + cs / 2;
     const endY = GameState.cheese.y * cs + cs / 2;
     
@@ -649,39 +719,21 @@ function drawCheesePath() {
 }
 
 // --- Player Movement ---
-document.addEventListener('keydown', (e) => {
-    if (!GameState.isPlaying || GameState.isPaused) return;
-
-    switch (e.key) {
-        case ' ':
-            e.preventDefault();
-            pauseGame();
-            return;
-    }
-
-    let dx = 0, dy = 0;
-    switch (e.key) {
-        case 'ArrowUp':    case 'w': case 'W': dy = -1; break;
-        case 'ArrowRight': case 'd': case 'D': dx =  1; break;
-        case 'ArrowDown':  case 's': case 'S': dy =  1; break;
-        case 'ArrowLeft':  case 'a': case 'A': dx = -1; break;
-        default: return; // Ignore other keys
-    }
-
-    const char = GameState.characters[GameState.selectedCharacter];
+function movePlayer(player, dx, dy, characterKey) {
+    const char = GameState.characters[characterKey];
     const stepCount = char.abilityClass === 'scurry' ? 2 : 1;
 
     // Try to move up to stepCount cells in the desired direction, stopping at walls
     let moved = false;
     for (let i = 0; i < stepCount; i++) {
-        const nx = GameState.player.x + dx;
-        const ny = GameState.player.y + dy;
+        const nx = player.x + dx;
+        const ny = player.y + dy;
 
         // Must stay within maze bounds
         if (nx < 0 || nx >= GameState.mazeWidth || ny < 0 || ny >= GameState.mazeHeight) break;
 
         // Check wall between current cell and next cell
-        const currentCell = GameState.maze[GameState.player.y][GameState.player.x];
+        const currentCell = GameState.maze[player.y][player.x];
         let blocked = false;
         if (dy === -1 && currentCell.top) blocked = true;
         if (dy ===  1 && currentCell.bottom) blocked = true;
@@ -690,9 +742,57 @@ document.addEventListener('keydown', (e) => {
 
         if (blocked) break; // Wall ahead, stop here
 
-        GameState.player.x = nx;
-        GameState.player.y = ny;
+        player.x = nx;
+        player.y = ny;
         moved = true;
+    }
+
+    return moved;
+}
+
+document.addEventListener('keydown', (e) => {
+    if (!GameState.isPlaying || GameState.isPaused) return;
+
+    if (e.key === ' ') {
+        e.preventDefault();
+        pauseGame();
+        return;
+    }
+
+    let moved = false;
+
+    if (GameState.multiplayer) {
+        let dx = 0, dy = 0;
+        switch (e.key) {
+            case 'ArrowUp':    dy = -1; break;
+            case 'ArrowRight': dx =  1; break;
+            case 'ArrowDown':  dy =  1; break;
+            case 'ArrowLeft':  dx = -1; break;
+        }
+
+        if (dx !== 0 || dy !== 0) {
+            moved = movePlayer(GameState.player, dx, dy, GameState.selectedCharacter);
+        } else {
+            let dx2 = 0, dy2 = 0;
+            switch (e.key) {
+                case 'w': case 'W': dy2 = -1; break;
+                case 'd': case 'D': dx2 =  1; break;
+                case 's': case 'S': dy2 =  1; break;
+                case 'a': case 'A': dx2 = -1; break;
+                default: return; // Ignore other keys
+            }
+            moved = movePlayer(GameState.player2, dx2, dy2, GameState.selectedCharacter2);
+        }
+    } else {
+        let dx = 0, dy = 0;
+        switch (e.key) {
+            case 'ArrowUp':    case 'w': case 'W': dy = -1; break;
+            case 'ArrowRight': case 'd': case 'D': dx =  1; break;
+            case 'ArrowDown':  case 's': case 'S': dy =  1; break;
+            case 'ArrowLeft':  case 'a': case 'A': dx = -1; break;
+            default: return; // Ignore other keys
+        }
+        moved = movePlayer(GameState.player, dx, dy, GameState.selectedCharacter);
     }
 
     if (moved) {
@@ -703,27 +803,35 @@ document.addEventListener('keydown', (e) => {
 
 // --- Cheese Collision ---
 function checkCheeseCollision() {
-    if (GameState.cheese.x === GameState.player.x && GameState.cheese.y === GameState.player.y) {
-        collectCheese();
+    if (GameState.player.x === GameState.cheese.x && GameState.player.y === GameState.cheese.y) {
+        collectCheese(1);
+        return;
+    }
+    if (GameState.multiplayer && GameState.player2.x === GameState.cheese.x && GameState.player2.y === GameState.cheese.y) {
+        collectCheese(2);
     }
 }
 
-function collectCheese() {
+function collectCheese(playerNum = 1) {
     let points = 0;
     switch (GameState.cheese.type) {
         case 'golden': points = 50; break;
         case 'double': points = 25; break;
         default: points = 10;
     }
-    
+
     // Speed bonus for easy/medium
     if (GameState.timeLeft > 30) {
         points = Math.floor(points * 1.2);
     }
-    
-    GameState.score += points;
+
+    if (playerNum === 2) {
+        GameState.score2 += points;
+    } else {
+        GameState.score += points;
+    }
     GameState.cheeseCollected++;
-    
+
     // Level up every 5 cheese
     if (GameState.cheeseCollected % 5 === 0) {
         GameState.level++;
@@ -731,6 +839,7 @@ function collectCheese() {
         updateMazeSize();
         GameState.maze = generateMaze(GameState.mazeWidth, GameState.mazeHeight);
         GameState.player = { x: 0, y: 0 };
+        GameState.player2 = { x: GameState.mazeWidth - 1, y: GameState.mazeHeight - 1 };
     }
     
     // Play collect animation
@@ -788,6 +897,9 @@ function updateUI() {
     document.getElementById('timer').textContent = GameState.timeLeft;
     document.getElementById('level').textContent = GameState.level;
     document.getElementById('lives').textContent = GameState.lives;
+    if (GameState.multiplayer) {
+        document.getElementById('score2').textContent = GameState.score2;
+    }
 }
 
 function updateQuote() {
@@ -822,7 +934,22 @@ function stopGame() {
 
 function endGame() {
     stopGame();
-    
+
+    if (GameState.multiplayer) {
+        const p1 = GameState.score, p2 = GameState.score2;
+        document.getElementById('result-icon').textContent = p1 === p2 ? '🤝' : '🏆';
+        document.getElementById('result-title').textContent =
+            p1 > p2 ? 'Player 1 Wins!' : p2 > p1 ? 'Player 2 Wins!' : "It's a Tie!";
+        document.getElementById('result-quote').textContent = `"${GameState.resultQuotes[Math.floor(Math.random() * GameState.resultQuotes.length)]}"`;
+
+        document.getElementById('final-score').textContent = `${p1} - ${p2}`;
+        document.getElementById('final-level').textContent = GameState.level;
+        document.getElementById('final-cheese').textContent = GameState.cheeseCollected;
+
+        showScreen('game-over-screen');
+        return;
+    }
+
     // Determine result
     const won = GameState.score >= 50;
     

@@ -29,8 +29,11 @@
             </div>
             
             <div class="menu-buttons">
-                <button class="btn btn-primary" onclick="showCharacterSelect()">
+                <button class="btn btn-primary" onclick="startSinglePlayerSelect()">
                     <span class="btn-icon">🎮</span> Play Game
+                </button>
+                <button class="btn btn-secondary" onclick="startMultiplayerSelect()">
+                    <span class="btn-icon">👥</span> 2 Player (Local)
                 </button>
                 <button class="btn btn-secondary" onclick="showInstructions()">
                     <span class="btn-icon">📖</span> How to Play
@@ -51,7 +54,7 @@
     <div id="character-select" class="screen">
         <div class="select-container">
             <h2>Choose Your Character</h2>
-            <p class="select-subtitle">Each cheese eater has unique abilities!</p>
+            <p class="select-subtitle" id="select-subtitle">Each cheese eater has unique abilities!</p>
             <div class="char-grid" id="char-grid"></div>
             <button class="btn btn-primary" onclick="showMainMenu()">← Back</button>
         </div>
@@ -91,7 +94,12 @@
                     <div class="stat-item">
                         <span class="stat-icon">🧀</span>
                         <span class="stat-value" id="score">0</span>
-                        <span class="stat-label">Score</span>
+                        <span class="stat-label" id="score-label">Score</span>
+                    </div>
+                    <div class="stat-item" id="p2-stats" style="display: none;">
+                        <span class="stat-icon">🧀</span>
+                        <span class="stat-value" id="score2">0</span>
+                        <span class="stat-label">P2 Score</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-icon">⏱️</span>
@@ -191,6 +199,7 @@
                     <ul>
                         <li><strong>Arrow Keys / WASD:</strong> Move your character</li>
                         <li><strong>Space:</strong> Pause the game</li>
+                        <li><strong>2 Player:</strong> Player 1 uses Arrow Keys, Player 2 uses WASD &mdash; race to grab each cheese first!</li>
                     </ul>
                 </div>
                 <div class="instruction-section">
