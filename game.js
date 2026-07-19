@@ -243,8 +243,6 @@ function selectCharacter(key) {
         return;
     }
 
-    if (key === GameState.selectedCharacter) return; // players need different characters
-
     GameState.selectedCharacter2 = key;
     showScreen('difficulty-select');
 }
