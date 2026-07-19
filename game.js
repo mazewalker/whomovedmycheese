@@ -3,6 +3,30 @@
 // Game Logic & Engine
 // ===================================
 
+// --- C64 Palette (canvas painting can't read CSS custom properties) ---
+const C64 = {
+    black: '#000000', white: '#FFFFFF', red: '#813338', cyan: '#75CEC8',
+    purple: '#8E3C97', green: '#56AC4D', blue: '#2E2C9B', yellow: '#EDF171',
+    orange: '#8E5029', brown: '#553800', lightRed: '#C46C71', darkGrey: '#4A4A4A',
+    grey: '#7B7B7B', lightGreen: '#A9FF9F', lightBlue: '#706DEB', lightGrey: '#B2B2B2'
+};
+
+// --- Achievements ---
+const ACHIEVEMENTS = [
+    { id: 'first-cheese', name: 'First Bite', icon: '🧀', description: 'Collect your first cheese.' },
+    { id: 'century-score', name: 'Century Club', icon: '💯', description: 'Reach 100 points in a single game.' },
+    { id: 'golden-goal', name: 'Golden Goal', icon: '✨', description: 'Collect a golden cheese.' },
+    { id: 'combo-master', name: 'Combo Master', icon: '🔥', description: 'Reach a 5x combo streak.' },
+    { id: 'level-5-survivor', name: 'Deep Maze Explorer', icon: '🗺️', description: 'Reach level 5.' },
+    { id: 'no-hit-clear', name: 'Untouchable', icon: '🛡️', description: 'Finish a game with 5+ cheese and no life lost.' },
+    { id: 'roster-complete', name: 'Met the Whole Crew', icon: '👥', description: 'Play a game as all 4 characters.' }
+];
+
+const ENEMY_ICONS = { thief: '🦝', wanderer: '🦇', guardian: '🐺' };
+const ENEMY_TINTS = { thief: C64.red, wanderer: C64.grey, guardian: C64.purple };
+const POWERUP_ICONS = { shield: '🛡️', apple: '🍎' };
+const DIR_VECTORS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+
 // --- Game State ---
 const GameState = {
     currentScreen: 'loading-screen',
@@ -19,16 +43,27 @@ const GameState = {
     mazeWidth: 0,
     mazeHeight: 0,
     cellSize: 0,
-    player: { x: 0, y: 0 },
+    player: { x: 0, y: 0, spawnX: 0, spawnY: 0, invulnerableUntil: 0, lastMoveTs: 0 },
     multiplayer: false,
     selectedCharacter2: null,
-    player2: { x: 0, y: 0 },
+    player2: { x: 0, y: 0, spawnX: 0, spawnY: 0, invulnerableUntil: 0, lastMoveTs: 0 },
     score2: 0,
     cheese: { x: 0, y: 0, type: 'regular', moving: false, warningTimer: 0 },
     cheeseMoveInterval: null,
     gameTimer: null,
-    cheeseWarningTimer: null,
+    enemyMoveInterval: null,
     lastKeyTime: 0,
+
+    enemies: [],
+    particles: [],
+    shake: { remaining: 0, duration: 0, magnitude: 0, x: 0, y: 0 },
+    combo: { count: 0, lastCollectTs: 0 },
+    powerups: { active: null, shieldCharges: 0, shieldCharges2: 0 },
+    achievements: { unlocked: JSON.parse(localStorage.getItem('cheese_achievements') || '{}') },
+    touch: { enabled: false },
+    rafId: null,
+    lastFrameTime: 0,
+
     quotes: [
         "The faster you let go of old cheese, the sooner you find new cheese.",
         "It is safer to search the maze for new cheese.",
@@ -60,7 +95,7 @@ const GameState = {
             name: 'Scurry',
             icon: '🐹',
             description: 'Runs fast through the maze',
-            ability: 'Move 2 cells instead of 1 (double speed)',
+            ability: 'Moves at double speed (half the usual delay between steps)',
             abilityClass: 'scurry',
             stats: { speed: 3, perception: 1, adaptability: 1 }
         },
@@ -144,6 +179,11 @@ function showLeaderboard() {
     switchLeaderboardTab(GameState.difficulty);
 }
 
+function showAchievements() {
+    populateAchievementsGrid();
+    document.getElementById('achievements-modal').classList.add('active');
+}
+
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
 }
@@ -152,7 +192,7 @@ function closeModal(modalId) {
 function populateMenuCharacters() {
     const grid = document.getElementById('menu-char-grid');
     if (grid.children.length > 0) return; // Already populated
-    
+
     Object.entries(GameState.characters).forEach(([key, char]) => {
         const card = document.createElement('div');
         card.className = 'char-card';
@@ -210,7 +250,7 @@ function selectCharacter(key) {
 }
 
 // --- Maze Generation (Recursive Backtracker) ---
-function generateMaze(width, height) {
+function generateMaze(width, height, startX = 0, startY = 0) {
     const maze = [];
     for (let y = 0; y < height; y++) {
         maze[y] = [];
@@ -221,16 +261,16 @@ function generateMaze(width, height) {
             };
         }
     }
-    
+
     const stack = [];
-    let current = { x: 0, y: 0 };
-    maze[0][0].visited = true;
+    let current = { x: startX, y: startY };
+    maze[startY][startX].visited = true;
     let visitedCount = 1;
     const totalCells = width * height;
-    
+
     while (visitedCount < totalCells) {
         const neighbors = getUnvisitedNeighbors(current, maze, width, height);
-        
+
         if (neighbors.length > 0) {
             const next = neighbors[Math.floor(Math.random() * neighbors.length)];
             stack.push(current);
@@ -242,30 +282,101 @@ function generateMaze(width, height) {
             current = stack.pop();
         }
     }
-    
+
     return maze;
 }
 
 function getUnvisitedNeighbors(current, maze, width, height) {
     const neighbors = [];
     const { x, y } = current;
-    
+
     if (y > 0 && !maze[y - 1][x].visited) neighbors.push({ x, y: y - 1 });
     if (x < width - 1 && !maze[y][x + 1].visited) neighbors.push({ x: x + 1, y });
     if (y < height - 1 && !maze[y + 1][x].visited) neighbors.push({ x, y: y + 1 });
     if (x > 0 && !maze[y][x - 1].visited) neighbors.push({ x: x - 1, y });
-    
+
     return neighbors;
 }
 
 function removeWall(maze, current, next) {
     const dx = next.x - current.x;
     const dy = next.y - current.y;
-    
+
     if (dx === 1) { maze[current.y][current.x].right = false; maze[next.y][next.x].left = false; }
     if (dx === -1) { maze[current.y][current.x].left = false; maze[next.y][next.x].right = false; }
     if (dy === 1) { maze[current.y][current.x].bottom = false; maze[next.y][next.x].top = false; }
     if (dy === -1) { maze[current.y][current.x].top = false; maze[next.y][next.x].bottom = false; }
+}
+
+// Recursive-backtracker output is a perfect (fully-spanning, loop-free) maze.
+// Removing any additional wall can only ever create a loop, never disconnect
+// the graph, so BFS reachability guarantees survive this pass for free.
+function braidMaze(maze, width, height, loopFactor) {
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const cell = maze[y][x];
+            if (x < width - 1 && cell.right && Math.random() < loopFactor) {
+                cell.right = false;
+                maze[y][x + 1].left = false;
+            }
+            if (y < height - 1 && cell.bottom && Math.random() < loopFactor) {
+                cell.bottom = false;
+                maze[y + 1][x].top = false;
+            }
+        }
+    }
+}
+
+function getOpenNeighbors(x, y) {
+    const cell = GameState.maze[y][x];
+    const neighbors = [];
+    if (!cell.top && y > 0) neighbors.push({ x, y: y - 1 });
+    if (!cell.right && x < GameState.mazeWidth - 1) neighbors.push({ x: x + 1, y });
+    if (!cell.bottom && y < GameState.mazeHeight - 1) neighbors.push({ x, y: y + 1 });
+    if (!cell.left && x > 0) neighbors.push({ x: x - 1, y });
+    return neighbors;
+}
+
+// BFS distance map from a starting cell; also backs isReachable/getReachableCells.
+function bfsDistances(startX, startY) {
+    const dist = new Map();
+    dist.set(`${startX},${startY}`, 0);
+    const queue = [{ x: startX, y: startY }];
+
+    while (queue.length > 0) {
+        const { x, y } = queue.shift();
+        const d = dist.get(`${x},${y}`);
+        for (const n of getOpenNeighbors(x, y)) {
+            const key = `${n.x},${n.y}`;
+            if (!dist.has(key)) {
+                dist.set(key, d + 1);
+                queue.push(n);
+            }
+        }
+    }
+    return dist;
+}
+
+function isReachable(startX, startY, targetX, targetY) {
+    return bfsDistances(startX, startY).has(`${targetX},${targetY}`);
+}
+
+function getReachableCells(startX, startY) {
+    return [...bfsDistances(startX, startY).keys()].map(key => {
+        const [x, y] = key.split(',').map(Number);
+        return { x, y };
+    });
+}
+
+function pickSpawnCorners() {
+    const w = GameState.mazeWidth, h = GameState.mazeHeight;
+    const pairs = [
+        { p1: { x: 0, y: 0 }, p2: { x: w - 1, y: h - 1 } },
+        { p1: { x: w - 1, y: 0 }, p2: { x: 0, y: h - 1 } }
+    ];
+    const pick = pairs[Math.floor(Math.random() * pairs.length)];
+    GameState.player = { x: pick.p1.x, y: pick.p1.y, spawnX: pick.p1.x, spawnY: pick.p1.y, invulnerableUntil: 0, lastMoveTs: 0 };
+    GameState.player2 = { x: pick.p2.x, y: pick.p2.y, spawnX: pick.p2.x, spawnY: pick.p2.y, invulnerableUntil: 0, lastMoveTs: 0 };
 }
 
 // --- Game Initialization ---
@@ -275,6 +386,11 @@ function startGame(difficulty) {
     GameState.score2 = 0;
     GameState.level = 1;
     GameState.cheeseCollected = 0;
+    GameState.combo = { count: 0, lastCollectTs: 0 };
+    GameState.particles = [];
+    GameState.shake = { remaining: 0, duration: 0, magnitude: 0, x: 0, y: 0 };
+    GameState.powerups = { active: null, shieldCharges: 0, shieldCharges2: 0 };
+    GameState.lastFrameTime = 0;
 
     // Set lives based on character ability
     GameState.lives = GameState.selectedCharacter === 'hem' ? 4 : 3; // Hem gets +1 life
@@ -289,15 +405,20 @@ function startGame(difficulty) {
     // Set maze size based on level
     updateMazeSize();
 
-    // Generate maze
-    GameState.maze = generateMaze(GameState.mazeWidth, GameState.mazeHeight);
+    // Randomize spawn corners, then carve the maze starting from player 1's corner
+    pickSpawnCorners();
+    GameState.maze = generateMaze(GameState.mazeWidth, GameState.mazeHeight, GameState.player.spawnX, GameState.player.spawnY);
+    braidMaze(GameState.maze, GameState.mazeWidth, GameState.mazeHeight, 0.12);
 
-    // Place players at opposite corners of the start
-    GameState.player = { x: 0, y: 0 };
-    GameState.player2 = { x: GameState.mazeWidth - 1, y: GameState.mazeHeight - 1 };
-
-    // Place cheese at farthest point
+    // Place cheese at a reachable point, then populate enemies around it
     placeCheese();
+    spawnEnemies();
+
+    recordCharacterPlayed(GameState.selectedCharacter);
+
+    GameState.touch.enabled = window.matchMedia('(pointer: coarse) and (hover: none)').matches && !GameState.multiplayer;
+    const dpad = document.getElementById('touch-dpad');
+    if (dpad) dpad.classList.toggle('visible', GameState.touch.enabled);
 
     // Setup canvas
     setupCanvas();
@@ -310,18 +431,23 @@ function startGame(difficulty) {
     toggleMultiplayerUI();
     updateUI();
     updateQuote();
-    drawGame();
 
     // Start timers
     startGameTimer();
     startCheeseMovement();
+    startEnemyMovement();
+
+    cancelAnimationFrame(GameState.rafId);
+    GameState.rafId = requestAnimationFrame(gameLoop);
 
     // Hide hint after 3 seconds
     const hint = document.getElementById('player-hint');
     if (hint) {
         hint.textContent = GameState.multiplayer
             ? 'P1: Arrow Keys · P2: WASD'
-            : 'Use Arrow Keys or WASD to move';
+            : GameState.touch.enabled
+                ? 'Swipe or tap the D-pad to move'
+                : 'Use Arrow Keys or WASD to move';
         hint.style.display = '';
     }
     setTimeout(() => {
@@ -338,7 +464,7 @@ function toggleMultiplayerUI() {
 
 function updateMazeSize() {
     const levelBonus = Math.min(GameState.level - 1, 6);
-    
+
     switch (GameState.difficulty) {
         case 'easy':
             GameState.mazeWidth = 8 + levelBonus;
@@ -358,13 +484,13 @@ function updateMazeSize() {
 function placeCheese() {
     let cheeseX, cheeseY;
     let attempts = 0;
-    
+
     do {
         cheeseX = Math.floor(Math.random() * GameState.mazeWidth);
         cheeseY = Math.floor(Math.random() * GameState.mazeHeight);
         attempts++;
     } while ((cheeseX === GameState.player.x && cheeseY === GameState.player.y) && attempts < 100);
-    
+
     // Ensure cheese is always reachable via BFS
     if (!isReachable(GameState.player.x, GameState.player.y, cheeseX, cheeseY)) {
         const reachable = getReachableCells(GameState.player.x, GameState.player.y);
@@ -376,7 +502,7 @@ function placeCheese() {
         cheeseX = pick.x;
         cheeseY = pick.y;
     }
-    
+
     // Determine cheese type
     const rand = Math.random();
     let cheeseType = 'regular';
@@ -385,7 +511,7 @@ function placeCheese() {
     } else if (rand < 0.3) {
         cheeseType = 'double';
     }
-    
+
     GameState.cheese = {
         x: cheeseX,
         y: cheeseY,
@@ -393,75 +519,19 @@ function placeCheese() {
         moving: false,
         warningTimer: 0
     };
-    
+
     updateCheeseStatus();
 }
 
-// BFS to check if target is reachable from start
-function isReachable(startX, startY, targetX, targetY) {
-    const visited = new Set();
-    const queue = [{ x: startX, y: startY }];
-    visited.add(`${startX},${startY}`);
-    
-    while (queue.length > 0) {
-        const { x, y } = queue.shift();
-        if (x === targetX && y === targetY) return true;
-        
-        const cell = GameState.maze[y][x];
-        const neighbors = [];
-        if (!cell.top && y > 0) neighbors.push({ x, y: y - 1 });
-        if (!cell.right && x < GameState.mazeWidth - 1) neighbors.push({ x: x + 1, y });
-        if (!cell.bottom && y < GameState.mazeHeight - 1) neighbors.push({ x, y: y + 1 });
-        if (!cell.left && x > 0) neighbors.push({ x: x - 1, y });
-        
-        for (const n of neighbors) {
-            const key = `${n.x},${n.y}`;
-            if (!visited.has(key)) {
-                visited.add(key);
-                queue.push(n);
-            }
-        }
-    }
-    return false;
-}
-
-// Get all cells reachable from a starting position
-function getReachableCells(startX, startY) {
-    const result = [];
-    const visited = new Set();
-    const queue = [{ x: startX, y: startY }];
-    visited.add(`${startX},${startY}`);
-    
-    while (queue.length > 0) {
-        const { x, y } = queue.shift();
-        result.push({ x, y });
-        
-        const cell = GameState.maze[y][x];
-        const neighbors = [];
-        if (!cell.top && y > 0) neighbors.push({ x, y: y - 1 });
-        if (!cell.right && x < GameState.mazeWidth - 1) neighbors.push({ x: x + 1, y });
-        if (!cell.bottom && y < GameState.mazeHeight - 1) neighbors.push({ x, y: y + 1 });
-        if (!cell.left && x > 0) neighbors.push({ x: x - 1, y });
-        
-        for (const n of neighbors) {
-            const key = `${n.x},${n.y}`;
-            if (!visited.has(key)) {
-                visited.add(key);
-                queue.push(n);
-            }
-        }
-    }
-    return result;
-}
-
 function setupCanvas() {
+    const reservedHeight = GameState.touch.enabled ? 280 : 200;
     const maxWidth = window.innerWidth - 40;
-    const maxHeight = window.innerHeight - 200;
-    
+    const maxHeight = window.innerHeight - reservedHeight;
+
     const cellWidth = Math.floor(maxWidth / GameState.mazeWidth);
     const cellHeight = Math.floor(maxHeight / GameState.mazeHeight);
     GameState.cellSize = Math.min(cellWidth, cellHeight, 60);
-    
+
     canvas.width = GameState.mazeWidth * GameState.cellSize;
     canvas.height = GameState.mazeHeight * GameState.cellSize;
 }
@@ -473,11 +543,11 @@ function startGameTimer() {
         if (!GameState.isPaused && GameState.isPlaying) {
             GameState.timeLeft--;
             updateUI();
-            
+
             if (GameState.timeLeft <= 0) {
-                endGame();
+                endGame('timeup');
             }
-            
+
             // Warning at 10 seconds
             if (GameState.timeLeft === 10) {
                 document.getElementById('timer').style.color = 'var(--danger)';
@@ -489,16 +559,16 @@ function startGameTimer() {
 // --- Cheese Movement ---
 function startCheeseMovement() {
     clearInterval(GameState.cheeseMoveInterval);
-    
+
     let moveInterval;
     switch (GameState.difficulty) {
         case 'easy': moveInterval = 8000 - (GameState.level * 500); break;
         case 'medium': moveInterval = 5000 - (GameState.level * 300); break;
         case 'hard': moveInterval = 3000 - (GameState.level * 200); break;
     }
-    
+
     moveInterval = Math.max(moveInterval, 1500); // Minimum 1.5 seconds
-    
+
     GameState.cheeseMoveInterval = setInterval(() => {
         if (!GameState.isPaused && GameState.isPlaying) {
             moveCheese();
@@ -508,35 +578,27 @@ function startCheeseMovement() {
 
 function moveCheese() {
     if (GameState.cheese.moving) return;
-    
+
     // Show warning first
     GameState.cheese.moving = true;
     GameState.cheese.warningTimer = 1500; // 1.5 second warning
-    
+    SoundEngine.play('warning');
+
     updateCheeseStatus();
-    drawGame();
-    
+
     setTimeout(() => {
         if (!GameState.isPlaying) return;
-        
+
+        const possibleMoves = getOpenNeighbors(GameState.cheese.x, GameState.cheese.y);
         let newX = GameState.cheese.x;
         let newY = GameState.cheese.y;
-        
-        // Find valid moves (cells with no walls)
-        const cell = GameState.maze[newY][newX];
-        const possibleMoves = [];
-        
-        if (!cell.top && newY > 0) possibleMoves.push({ x: newX, y: newY - 1 });
-        if (!cell.right && newX < GameState.mazeWidth - 1) possibleMoves.push({ x: newX + 1, y: newY });
-        if (!cell.bottom && newY < GameState.mazeHeight - 1) possibleMoves.push({ x: newX, y: newY + 1 });
-        if (!cell.left && newX > 0) possibleMoves.push({ x: newX - 1, y: newY });
-        
+
         if (possibleMoves.length > 0) {
             const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
             newX = move.x;
             newY = move.y;
         }
-        
+
         // Don't place cheese on a player
         const onPlayer = (x, y) =>
             (x === GameState.player.x && y === GameState.player.y) ||
@@ -552,13 +614,12 @@ function moveCheese() {
                 }
             }
         }
-        
+
         GameState.cheese.x = newX;
         GameState.cheese.y = newY;
         GameState.cheese.moving = false;
-        
+
         updateCheeseStatus();
-        drawGame();
     }, 1500);
 }
 
@@ -573,28 +634,431 @@ function updateCheeseStatus() {
     }
 }
 
+// --- Enemies ---
+function getEnemyComposition(difficulty, level) {
+    if (difficulty === 'easy') {
+        if (level <= 1) return [];
+        if (level <= 3) return ['wanderer'];
+        return ['wanderer', 'guardian'];
+    }
+    if (difficulty === 'medium') {
+        if (level <= 1) return ['wanderer'];
+        if (level <= 3) return ['wanderer', 'guardian'];
+        return ['wanderer', 'guardian', 'thief'];
+    }
+    // hard
+    if (level <= 1) return ['wanderer', 'thief'];
+    if (level <= 3) return ['wanderer', 'thief', 'guardian'];
+    return ['wanderer', 'wanderer', 'thief', 'guardian'];
+}
+
+function getEnemyMoveInterval(type, difficulty, level) {
+    if (type === 'guardian') return Math.max(900, 1800 - level * 60);
+    if (type === 'wanderer') {
+        switch (difficulty) {
+            case 'easy': return Math.max(1200, 2500 - level * 100);
+            case 'medium': return Math.max(900, 2000 - level * 120);
+            case 'hard': return Math.max(700, 1500 - level * 150);
+        }
+    }
+    if (type === 'thief') {
+        switch (difficulty) {
+            case 'easy': return Math.max(1000, 2000 - level * 100);
+            case 'medium': return Math.max(800, 1600 - level * 100);
+            case 'hard': return Math.max(600, 1200 - level * 120);
+        }
+    }
+    return 1500;
+}
+
+function spawnEnemies() {
+    GameState.enemies = [];
+    const types = getEnemyComposition(GameState.difficulty, GameState.level);
+    if (types.length === 0) return;
+
+    const distFromPlayer = bfsDistances(GameState.player.x, GameState.player.y);
+    const distFromCheese = bfsDistances(GameState.cheese.x, GameState.cheese.y);
+    const usedCells = new Set([`${GameState.player.x},${GameState.player.y}`, `${GameState.cheese.x},${GameState.cheese.y}`]);
+    if (GameState.multiplayer) usedCells.add(`${GameState.player2.x},${GameState.player2.y}`);
+    const minFarDist = Math.max(3, Math.floor(GameState.mazeWidth / 2));
+
+    types.forEach((type, i) => {
+        let candidates;
+        if (type === 'guardian') {
+            candidates = [...distFromCheese.entries()].filter(([key, d]) => d <= 3 && !usedCells.has(key)).map(([key]) => key);
+        } else {
+            candidates = [...distFromPlayer.entries()].filter(([key, d]) => d >= minFarDist && !usedCells.has(key)).map(([key]) => key);
+            if (candidates.length === 0) {
+                candidates = [...distFromPlayer.entries()].filter(([key]) => !usedCells.has(key)).map(([key]) => key);
+            }
+        }
+        if (candidates.length === 0) return;
+
+        const key = candidates[Math.floor(Math.random() * candidates.length)];
+        const [x, y] = key.split(',').map(Number);
+        usedCells.add(key);
+
+        const now = performance.now();
+        GameState.enemies.push({
+            id: `e${i}-${now}`,
+            type, x, y, prevX: x, prevY: y,
+            moveStartTs: now, lastMoveTs: now,
+            moveInterval: getEnemyMoveInterval(type, GameState.difficulty, GameState.level),
+            fleeUntil: 0, fleeFrom: null,
+            lastDx: 0, lastDy: 0
+        });
+    });
+}
+
+function startEnemyMovement() {
+    clearInterval(GameState.enemyMoveInterval);
+    GameState.enemyMoveInterval = setInterval(() => {
+        if (!GameState.isPaused && GameState.isPlaying) moveEnemies();
+    }, 400);
+}
+
+function moveEnemies() {
+    const now = performance.now();
+    GameState.enemies.forEach(enemy => {
+        if (now - enemy.lastMoveTs < enemy.moveInterval) return;
+        stepEnemy(enemy, now);
+    });
+    checkEnemyCollisions();
+}
+
+function stepEnemy(enemy, now) {
+    let next;
+    if (enemy.type === 'wanderer') next = stepWanderer(enemy);
+    else if (enemy.type === 'thief') next = stepThief(enemy, now);
+    else next = stepGuardian(enemy);
+
+    if (next && (next.x !== enemy.x || next.y !== enemy.y)) {
+        enemy.prevX = enemy.x;
+        enemy.prevY = enemy.y;
+        enemy.lastDx = next.x - enemy.x;
+        enemy.lastDy = next.y - enemy.y;
+        enemy.x = next.x;
+        enemy.y = next.y;
+        enemy.moveStartTs = now;
+    }
+    enemy.lastMoveTs = now;
+}
+
+function stepWanderer(enemy) {
+    let neighbors = getOpenNeighbors(enemy.x, enemy.y);
+    if (neighbors.length === 0) return null;
+    if (neighbors.length > 1 && Math.random() < 0.7) {
+        const filtered = neighbors.filter(n => !(n.x === enemy.x - enemy.lastDx && n.y === enemy.y - enemy.lastDy));
+        if (filtered.length > 0) neighbors = filtered;
+    }
+    return neighbors[Math.floor(Math.random() * neighbors.length)];
+}
+
+function stepThief(enemy, now) {
+    const neighbors = getOpenNeighbors(enemy.x, enemy.y);
+    if (neighbors.length === 0) return null;
+
+    if (now < enemy.fleeUntil) {
+        const from = enemy.fleeFrom || GameState.player;
+        let best = neighbors[0], bestDist = -1;
+        neighbors.forEach(n => {
+            const d = Math.abs(n.x - from.x) + Math.abs(n.y - from.y);
+            if (d > bestDist) { bestDist = d; best = n; }
+        });
+        return best;
+    }
+
+    const targets = GameState.multiplayer ? [GameState.player, GameState.player2] : [GameState.player];
+    let bestTarget = null, bestTargetDist = Infinity;
+    targets.forEach(p => {
+        const distFromP = bfsDistances(p.x, p.y);
+        const d = distFromP.get(`${enemy.x},${enemy.y}`);
+        if (d !== undefined && d < bestTargetDist) { bestTargetDist = d; bestTarget = p; }
+    });
+    if (!bestTarget) return null;
+
+    const distFromTarget = bfsDistances(bestTarget.x, bestTarget.y);
+    let best = null, bestDist = Infinity;
+    neighbors.forEach(n => {
+        const d = distFromTarget.get(`${n.x},${n.y}`);
+        if (d !== undefined && d < bestDist) { bestDist = d; best = n; }
+    });
+    return best;
+}
+
+function stepGuardian(enemy) {
+    const distFromCheese = bfsDistances(GameState.cheese.x, GameState.cheese.y);
+    const myDist = distFromCheese.get(`${enemy.x},${enemy.y}`);
+    const neighbors = getOpenNeighbors(enemy.x, enemy.y);
+    if (neighbors.length === 0) return null;
+
+    if (myDist === undefined || myDist > 2) {
+        let best = null, bestDist = Infinity;
+        neighbors.forEach(n => {
+            const d = distFromCheese.get(`${n.x},${n.y}`);
+            if (d !== undefined && d < bestDist) { bestDist = d; best = n; }
+        });
+        return best;
+    }
+
+    const withinRange = neighbors.filter(n => {
+        const d = distFromCheese.get(`${n.x},${n.y}`);
+        return d !== undefined && d <= 2;
+    });
+    if (withinRange.length === 0) return null;
+    return withinRange[Math.floor(Math.random() * withinRange.length)];
+}
+
+function checkEnemyCollisions() {
+    GameState.enemies.forEach(enemy => {
+        if (enemy.x === GameState.player.x && enemy.y === GameState.player.y) {
+            handleEnemyHit(1, enemy);
+        }
+        if (GameState.multiplayer && enemy.x === GameState.player2.x && enemy.y === GameState.player2.y) {
+            handleEnemyHit(2, enemy);
+        }
+    });
+}
+
+function handleEnemyHit(playerNum, enemy) {
+    const player = playerNum === 2 ? GameState.player2 : GameState.player;
+    const now = Date.now();
+    if (now < player.invulnerableUntil) return;
+
+    player.invulnerableUntil = now + 1500;
+
+    const hasShield = playerNum === 2 ? GameState.powerups.shieldCharges2 > 0 : GameState.powerups.shieldCharges > 0;
+    if (hasShield) {
+        if (playerNum === 2) GameState.powerups.shieldCharges2 = 0; else GameState.powerups.shieldCharges = 0;
+        SoundEngine.play('shield-block');
+        spawnParticles(player.x, player.y, C64.cyan, 10);
+        updateUI();
+        return;
+    }
+
+    if (enemy.type === 'thief') {
+        const scoreKey = playerNum === 2 ? 'score2' : 'score';
+        const stolen = Math.floor(GameState[scoreKey] * 0.15);
+        GameState[scoreKey] = Math.max(0, GameState[scoreKey] - stolen);
+        GameState.combo.count = 0;
+        enemy.fleeFrom = { x: player.x, y: player.y };
+        enemy.fleeUntil = performance.now() + enemy.moveInterval * 3;
+    }
+
+    SoundEngine.play('enemy-hit');
+    triggerShake(8, 300);
+    spawnParticles(player.x, player.y, C64.red, 14);
+
+    // Knockback to this player's spawn corner
+    player.x = player.spawnX;
+    player.y = player.spawnY;
+
+    if (playerNum === 1) {
+        GameState.lives--;
+        updateUI();
+        if (GameState.lives <= 0) {
+            endGame('defeated');
+            return;
+        }
+    } else {
+        updateUI();
+    }
+}
+
+function getEnemyRenderPos(enemy, ts) {
+    const glideDuration = 220;
+    const t = Math.min(1, (ts - enemy.moveStartTs) / glideDuration);
+    return {
+        x: enemy.prevX + (enemy.x - enemy.prevX) * t,
+        y: enemy.prevY + (enemy.y - enemy.prevY) * t
+    };
+}
+
+function drawEnemy(enemy, ts) {
+    const cs = GameState.cellSize;
+    const pos = getEnemyRenderPos(enemy, ts);
+    const px = pos.x * cs + cs / 2;
+    const py = pos.y * cs + cs / 2;
+    const size = cs * 0.35;
+
+    ctx.fillStyle = ENEMY_TINTS[enemy.type];
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(px - size, py - size, size * 2, size * 2);
+    ctx.globalAlpha = 1;
+
+    ctx.font = `${size * 1.6}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ENEMY_ICONS[enemy.type], px, py);
+}
+
+// --- Power-ups ---
+function trySpawnPowerup() {
+    if (GameState.powerups.active) return;
+    if (Math.random() >= 0.25) return;
+
+    const distMap = bfsDistances(GameState.player.x, GameState.player.y);
+    const excluded = new Set([`${GameState.cheese.x},${GameState.cheese.y}`, `${GameState.player.x},${GameState.player.y}`]);
+    if (GameState.multiplayer) excluded.add(`${GameState.player2.x},${GameState.player2.y}`);
+    GameState.enemies.forEach(e => excluded.add(`${e.x},${e.y}`));
+
+    const candidates = [...distMap.keys()].filter(k => !excluded.has(k));
+    if (candidates.length === 0) return;
+
+    const key = candidates[Math.floor(Math.random() * candidates.length)];
+    const [x, y] = key.split(',').map(Number);
+    GameState.powerups.active = { type: Math.random() < 0.5 ? 'shield' : 'apple', x, y };
+}
+
+function checkPowerupCollision() {
+    const pu = GameState.powerups.active;
+    if (!pu) return;
+    if (GameState.player.x === pu.x && GameState.player.y === pu.y) {
+        collectPowerup(1, pu);
+    } else if (GameState.multiplayer && GameState.player2.x === pu.x && GameState.player2.y === pu.y) {
+        collectPowerup(2, pu);
+    }
+}
+
+function collectPowerup(playerNum, pu) {
+    if (pu.type === 'shield') {
+        if (playerNum === 2) GameState.powerups.shieldCharges2 = 1;
+        else GameState.powerups.shieldCharges = 1;
+    } else if (pu.type === 'apple') {
+        const maxLives = GameState.selectedCharacter === 'hem' ? 4 : 3;
+        if (playerNum === 1 && GameState.lives < maxLives) {
+            GameState.lives++;
+        } else {
+            GameState.timeLeft += 15;
+        }
+    }
+
+    SoundEngine.play('powerup');
+    spawnParticles(pu.x, pu.y, pu.type === 'shield' ? C64.cyan : C64.green, 12);
+    GameState.powerups.active = null;
+    updateUI();
+}
+
+function drawPowerup(ts) {
+    const pu = GameState.powerups.active;
+    if (!pu) return;
+
+    const cs = GameState.cellSize;
+    const pulse = 1 + 0.1 * Math.sin(ts / 300);
+    const size = cs * 0.3 * pulse;
+    const px = pu.x * cs + cs / 2;
+    const py = pu.y * cs + cs / 2;
+
+    ctx.fillStyle = pu.type === 'shield' ? C64.cyan : C64.green;
+    ctx.globalAlpha = 0.3;
+    ctx.fillRect(px - size, py - size, size * 2, size * 2);
+    ctx.globalAlpha = 1;
+
+    ctx.font = `${size * 1.8}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(POWERUP_ICONS[pu.type], px, py);
+}
+
+// --- Particles & Screen Shake ---
+function spawnParticles(cellX, cellY, color, count = 12) {
+    const cs = GameState.cellSize;
+    const cx = cellX * cs + cs / 2;
+    const cy = cellY * cs + cs / 2;
+
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 60 + Math.random() * 120;
+        const life = 400 + Math.random() * 300;
+        GameState.particles.push({
+            x: cx, y: cy,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life, maxLife: life,
+            color, size: 2 + Math.random() * 3
+        });
+    }
+}
+
+function updateParticles(dt) {
+    GameState.particles = GameState.particles.filter(p => {
+        p.life -= dt;
+        if (p.life <= 0) return false;
+        p.x += p.vx * (dt / 1000);
+        p.y += p.vy * (dt / 1000);
+        p.vx *= 0.94;
+        p.vy *= 0.94;
+        return true;
+    });
+}
+
+function drawParticles() {
+    GameState.particles.forEach(p => {
+        ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    });
+    ctx.globalAlpha = 1;
+}
+
+function triggerShake(magnitude = 8, duration = 300) {
+    GameState.shake.magnitude = magnitude;
+    GameState.shake.duration = duration;
+    GameState.shake.remaining = duration;
+}
+
+function updateShake(dt) {
+    const shake = GameState.shake;
+    if (shake.remaining <= 0) {
+        shake.x = 0;
+        shake.y = 0;
+        return;
+    }
+    shake.remaining = Math.max(0, shake.remaining - dt);
+    const power = shake.magnitude * (shake.remaining / shake.duration);
+    shake.x = (Math.random() * 2 - 1) * power;
+    shake.y = (Math.random() * 2 - 1) * power;
+}
+
+// --- Game Loop (rendering + particle/shake physics only; setInterval timers own game-logic ticks) ---
+function gameLoop(ts) {
+    const dt = GameState.lastFrameTime ? ts - GameState.lastFrameTime : 16;
+    GameState.lastFrameTime = ts;
+
+    if (GameState.isPlaying && !GameState.isPaused) {
+        updateShake(dt);
+        updateParticles(dt);
+        drawGame(ts);
+    }
+
+    GameState.rafId = requestAnimationFrame(gameLoop);
+}
+
 // --- Drawing ---
-function drawGame() {
+function drawGame(ts = performance.now()) {
     if (!ctx) return;
-    
+
     const cs = GameState.cellSize;
     const maze = GameState.maze;
-    
-    // Clear canvas
-    ctx.fillStyle = '#0a0a1a';
+
+    // Clear at full extent first so screen shake never reveals gaps at the edges
+    ctx.fillStyle = C64.black;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
+    ctx.save();
+    ctx.translate(GameState.shake.x, GameState.shake.y);
+
     // Draw maze walls
-    ctx.strokeStyle = '#4a5568';
+    ctx.strokeStyle = C64.lightGrey;
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
-    
+
     for (let y = 0; y < GameState.mazeHeight; y++) {
         for (let x = 0; x < GameState.mazeWidth; x++) {
             const cell = maze[y][x];
             const px = x * cs;
             const py = y * cs;
-            
+
             if (cell.top) {
                 ctx.beginPath();
                 ctx.moveTo(px, py);
@@ -621,7 +1085,7 @@ function drawGame() {
             }
         }
     }
-    
+
     // Draw cheese path hint for Haw
     if (GameState.selectedCharacter === 'haw') {
         drawCheesePath(GameState.player);
@@ -630,14 +1094,20 @@ function drawGame() {
         drawCheesePath(GameState.player2);
     }
 
-    // Draw cheese
+    drawPowerup(ts);
     drawCheese();
+
+    GameState.enemies.forEach(enemy => drawEnemy(enemy, ts));
 
     // Draw players
     drawPlayer(GameState.player, GameState.selectedCharacter);
     if (GameState.multiplayer) {
         drawPlayer(GameState.player2, GameState.selectedCharacter2);
     }
+
+    drawParticles();
+
+    ctx.restore();
 }
 
 function drawCheese() {
@@ -645,26 +1115,13 @@ function drawCheese() {
     const cx = GameState.cheese.x * cs + cs / 2;
     const cy = GameState.cheese.y * cs + cs / 2;
     const size = cs * 0.35;
-    
-    // Glow effect
-    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 2);
-    let glowColor;
-    switch (GameState.cheese.type) {
-        case 'golden':
-            glow.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
-            glow.addColorStop(1, 'rgba(255, 215, 0, 0)');
-            break;
-        case 'double':
-            glow.addColorStop(0, 'rgba(255, 165, 0, 0.4)');
-            glow.addColorStop(1, 'rgba(255, 165, 0, 0)');
-            break;
-        default:
-            glow.addColorStop(0, 'rgba(245, 158, 11, 0.4)');
-            glow.addColorStop(1, 'rgba(245, 158, 11, 0)');
-    }
-    ctx.fillStyle = glow;
-    ctx.fillRect(cx - size * 2, cy - size * 2, size * 4, size * 4);
-    
+
+    const highlight = GameState.cheese.type === 'double' ? C64.orange : C64.yellow;
+    ctx.fillStyle = highlight;
+    ctx.globalAlpha = 0.25;
+    ctx.fillRect(cx - size, cy - size, size * 2, size * 2);
+    ctx.globalAlpha = 1;
+
     // Cheese emoji
     let cheeseEmoji;
     switch (GameState.cheese.type) {
@@ -672,7 +1129,7 @@ function drawCheese() {
         case 'double': cheeseEmoji = '🧀🧀'; break;
         default: cheeseEmoji = '🧀';
     }
-    
+
     ctx.font = `${size * 1.5}px serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -685,19 +1142,23 @@ function drawPlayer(player, characterKey) {
     const px = player.x * cs + cs / 2;
     const py = player.y * cs + cs / 2;
     const size = cs * 0.4;
-    
-    // Glow effect
-    const glow = ctx.createRadialGradient(px, py, 0, px, py, size * 1.5);
-    glow.addColorStop(0, 'rgba(139, 92, 246, 0.3)');
-    glow.addColorStop(1, 'rgba(139, 92, 246, 0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(px - size * 2, py - size * 2, size * 4, size * 4);
-    
+
+    // Dim (never fully hide) while briefly invulnerable after a hit, so a single
+    // frame/screenshot never reads as "the player vanished".
+    const invulnerable = Date.now() < player.invulnerableUntil;
+    const flickerAlpha = invulnerable && Math.floor(Date.now() / 100) % 2 === 0 ? 0.35 : 1;
+
+    ctx.globalAlpha = flickerAlpha * 0.3;
+    ctx.fillStyle = C64.lightBlue;
+    ctx.fillRect(px - size, py - size, size * 2, size * 2);
+    ctx.globalAlpha = flickerAlpha;
+
     // Player emoji
     ctx.font = `${size * 1.5}px serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(char.icon, px, py);
+    ctx.globalAlpha = 1;
 }
 
 function drawCheesePath(player) {
@@ -707,8 +1168,8 @@ function drawCheesePath(player) {
     const startY = player.y * cs + cs / 2;
     const endX = GameState.cheese.x * cs + cs / 2;
     const endY = GameState.cheese.y * cs + cs / 2;
-    
-    ctx.strokeStyle = 'rgba(139, 92, 246, 0.2)';
+
+    ctx.strokeStyle = 'rgba(112, 109, 235, 0.35)';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -719,35 +1180,50 @@ function drawCheesePath(player) {
 }
 
 // --- Player Movement ---
-function movePlayer(player, dx, dy, characterKey) {
+const MOVE_COOLDOWN = 150; // ms between steps for normal characters
+const SCURRY_MOVE_COOLDOWN = 75; // Scurry moves one cell at a time too, just twice as often
+
+function movePlayer(player, dx, dy) {
+    const nx = player.x + dx;
+    const ny = player.y + dy;
+
+    // Must stay within maze bounds
+    if (nx < 0 || nx >= GameState.mazeWidth || ny < 0 || ny >= GameState.mazeHeight) return false;
+
+    // Check wall between current cell and next cell
+    const currentCell = GameState.maze[player.y][player.x];
+    let blocked = false;
+    if (dy === -1 && currentCell.top) blocked = true;
+    if (dy ===  1 && currentCell.bottom) blocked = true;
+    if (dx ===  1 && currentCell.right) blocked = true;
+    if (dx === -1 && currentCell.left) blocked = true;
+
+    if (blocked) return false; // Wall ahead
+
+    player.x = nx;
+    player.y = ny;
+    return true;
+}
+
+function handleDirectionInput(dx, dy, playerNum = 1) {
+    if (!GameState.isPlaying || GameState.isPaused) return;
+
+    const player = playerNum === 2 ? GameState.player2 : GameState.player;
+    const characterKey = playerNum === 2 ? GameState.selectedCharacter2 : GameState.selectedCharacter;
     const char = GameState.characters[characterKey];
-    const stepCount = char.abilityClass === 'scurry' ? 2 : 1;
 
-    // Try to move up to stepCount cells in the desired direction, stopping at walls
-    let moved = false;
-    for (let i = 0; i < stepCount; i++) {
-        const nx = player.x + dx;
-        const ny = player.y + dy;
+    const cooldown = char.abilityClass === 'scurry' ? SCURRY_MOVE_COOLDOWN : MOVE_COOLDOWN;
+    const now = performance.now();
+    if (now - player.lastMoveTs < cooldown) return;
 
-        // Must stay within maze bounds
-        if (nx < 0 || nx >= GameState.mazeWidth || ny < 0 || ny >= GameState.mazeHeight) break;
+    const moved = movePlayer(player, dx, dy);
 
-        // Check wall between current cell and next cell
-        const currentCell = GameState.maze[player.y][player.x];
-        let blocked = false;
-        if (dy === -1 && currentCell.top) blocked = true;
-        if (dy ===  1 && currentCell.bottom) blocked = true;
-        if (dx ===  1 && currentCell.right) blocked = true;
-        if (dx === -1 && currentCell.left) blocked = true;
-
-        if (blocked) break; // Wall ahead, stop here
-
-        player.x = nx;
-        player.y = ny;
-        moved = true;
+    if (moved) {
+        player.lastMoveTs = now;
+        checkCheeseCollision();
+        checkPowerupCollision();
+        checkEnemyCollisions();
     }
-
-    return moved;
 }
 
 document.addEventListener('keydown', (e) => {
@@ -759,45 +1235,63 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    let moved = false;
-
     if (GameState.multiplayer) {
-        let dx = 0, dy = 0;
         switch (e.key) {
-            case 'ArrowUp':    dy = -1; break;
-            case 'ArrowRight': dx =  1; break;
-            case 'ArrowDown':  dy =  1; break;
-            case 'ArrowLeft':  dx = -1; break;
-        }
-
-        if (dx !== 0 || dy !== 0) {
-            moved = movePlayer(GameState.player, dx, dy, GameState.selectedCharacter);
-        } else {
-            let dx2 = 0, dy2 = 0;
-            switch (e.key) {
-                case 'w': case 'W': dy2 = -1; break;
-                case 'd': case 'D': dx2 =  1; break;
-                case 's': case 'S': dy2 =  1; break;
-                case 'a': case 'A': dx2 = -1; break;
-                default: return; // Ignore other keys
-            }
-            moved = movePlayer(GameState.player2, dx2, dy2, GameState.selectedCharacter2);
+            case 'ArrowUp':    handleDirectionInput(0, -1, 1); return;
+            case 'ArrowRight': handleDirectionInput(1, 0, 1); return;
+            case 'ArrowDown':  handleDirectionInput(0, 1, 1); return;
+            case 'ArrowLeft':  handleDirectionInput(-1, 0, 1); return;
+            case 'w': case 'W': handleDirectionInput(0, -1, 2); return;
+            case 'd': case 'D': handleDirectionInput(1, 0, 2); return;
+            case 's': case 'S': handleDirectionInput(0, 1, 2); return;
+            case 'a': case 'A': handleDirectionInput(-1, 0, 2); return;
         }
     } else {
-        let dx = 0, dy = 0;
         switch (e.key) {
-            case 'ArrowUp':    case 'w': case 'W': dy = -1; break;
-            case 'ArrowRight': case 'd': case 'D': dx =  1; break;
-            case 'ArrowDown':  case 's': case 'S': dy =  1; break;
-            case 'ArrowLeft':  case 'a': case 'A': dx = -1; break;
-            default: return; // Ignore other keys
+            case 'ArrowUp': case 'w': case 'W': handleDirectionInput(0, -1, 1); return;
+            case 'ArrowRight': case 'd': case 'D': handleDirectionInput(1, 0, 1); return;
+            case 'ArrowDown': case 's': case 'S': handleDirectionInput(0, 1, 1); return;
+            case 'ArrowLeft': case 'a': case 'A': handleDirectionInput(-1, 0, 1); return;
         }
-        moved = movePlayer(GameState.player, dx, dy, GameState.selectedCharacter);
+    }
+});
+
+// --- Touch Controls ---
+document.addEventListener('DOMContentLoaded', () => {
+    const dpad = document.getElementById('touch-dpad');
+    if (dpad) {
+        dpad.querySelectorAll('.dpad-btn').forEach(btn => {
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const [dx, dy] = DIR_VECTORS[btn.dataset.dir];
+                handleDirectionInput(dx, dy, 1);
+            }, { passive: false });
+            btn.addEventListener('click', () => {
+                const [dx, dy] = DIR_VECTORS[btn.dataset.dir];
+                handleDirectionInput(dx, dy, 1);
+            });
+        });
     }
 
-    if (moved) {
-        drawGame();
-        checkCheeseCollision();
+    const mazeWrapper = document.querySelector('.maze-wrapper');
+    if (mazeWrapper) {
+        let touchStartX = 0, touchStartY = 0;
+        mazeWrapper.addEventListener('touchstart', (e) => {
+            const t = e.changedTouches[0];
+            touchStartX = t.clientX;
+            touchStartY = t.clientY;
+        }, { passive: true });
+        mazeWrapper.addEventListener('touchend', (e) => {
+            const t = e.changedTouches[0];
+            const dx = t.clientX - touchStartX;
+            const dy = t.clientY - touchStartY;
+            if (Math.abs(dx) < 30 && Math.abs(dy) < 30) return;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                handleDirectionInput(dx > 0 ? 1 : -1, 0, 1);
+            } else {
+                handleDirectionInput(0, dy > 0 ? 1 : -1, 1);
+            }
+        }, { passive: true });
     }
 });
 
@@ -825,6 +1319,20 @@ function collectCheese(playerNum = 1) {
         points = Math.floor(points * 1.2);
     }
 
+    // Combo streak: consecutive collections within an 8s window scale the bonus, capped at +100%
+    const now = Date.now();
+    if (now - GameState.combo.lastCollectTs <= 8000) {
+        GameState.combo.count++;
+    } else {
+        GameState.combo.count = 1;
+    }
+    GameState.combo.lastCollectTs = now;
+    const comboMultiplier = Math.min(1 + (GameState.combo.count - 1) * 0.1, 2.0);
+    points = Math.floor(points * comboMultiplier);
+
+    if (GameState.cheese.type === 'golden') unlockAchievement('golden-goal');
+    if (GameState.combo.count >= 5) unlockAchievement('combo-master');
+
     if (playerNum === 2) {
         GameState.score2 += points;
     } else {
@@ -832,24 +1340,35 @@ function collectCheese(playerNum = 1) {
     }
     GameState.cheeseCollected++;
 
+    if (GameState.cheeseCollected === 1) unlockAchievement('first-cheese');
+    if (GameState.score >= 100) unlockAchievement('century-score');
+
+    SoundEngine.play(GameState.cheese.type === 'golden' ? 'collect-golden' : 'collect');
+    spawnParticles(GameState.cheese.x, GameState.cheese.y, C64.yellow, GameState.cheese.type === 'golden' ? 18 : 10);
+
     // Level up every 5 cheese
     if (GameState.cheeseCollected % 5 === 0) {
         GameState.level++;
         addTime();
         updateMazeSize();
-        GameState.maze = generateMaze(GameState.mazeWidth, GameState.mazeHeight);
-        GameState.player = { x: 0, y: 0 };
-        GameState.player2 = { x: GameState.mazeWidth - 1, y: GameState.mazeHeight - 1 };
+        pickSpawnCorners();
+        GameState.maze = generateMaze(GameState.mazeWidth, GameState.mazeHeight, GameState.player.spawnX, GameState.player.spawnY);
+        braidMaze(GameState.maze, GameState.mazeWidth, GameState.mazeHeight, 0.12);
+        spawnEnemies();
+        setupCanvas(); // the maze grid grows with level; the canvas element must grow to match or its new edge cells render off-canvas
+        SoundEngine.play('level-up');
+        spawnParticles(GameState.player.x, GameState.player.y, C64.lightGreen, 20);
+        if (GameState.level >= 5) unlockAchievement('level-5-survivor');
     }
-    
+
     // Play collect animation
     showFloatingText(`+${points}`, GameState.cheese.x, GameState.cheese.y);
-    
+
     updateUI();
     updateQuote();
     placeCheese();
-    drawGame();
-    
+    trySpawnPowerup();
+
     // Restart cheese movement timer
     startCheeseMovement();
 }
@@ -862,7 +1381,7 @@ function showFloatingText(text, x, y) {
     const cs = GameState.cellSize;
     const px = x * cs + cs / 2;
     const py = y * cs + cs / 2;
-    
+
     const el = document.createElement('div');
     el.textContent = text;
     el.style.cssText = `
@@ -876,7 +1395,7 @@ function showFloatingText(text, x, y) {
         animation: floatUp 1s ease-out forwards;
         z-index: 100;
     `;
-    
+
     document.querySelector('.maze-wrapper').appendChild(el);
     setTimeout(() => el.remove(), 1000);
 }
@@ -899,6 +1418,24 @@ function updateUI() {
     document.getElementById('lives').textContent = GameState.lives;
     if (GameState.multiplayer) {
         document.getElementById('score2').textContent = GameState.score2;
+    }
+
+    const shieldBadge = document.getElementById('shield-badge');
+    if (shieldBadge) {
+        shieldBadge.style.display = GameState.powerups.shieldCharges > 0 ? 'flex' : 'none';
+    }
+
+    updateComboBadge();
+}
+
+function updateComboBadge() {
+    const badge = document.getElementById('combo-badge');
+    if (!badge) return;
+    if (GameState.combo.count >= 2) {
+        badge.style.display = '';
+        badge.textContent = `🔥 x${GameState.combo.count}`;
+    } else {
+        badge.style.display = 'none';
     }
 }
 
@@ -930,10 +1467,13 @@ function stopGame() {
     GameState.isPlaying = false;
     clearInterval(GameState.gameTimer);
     clearInterval(GameState.cheeseMoveInterval);
+    clearInterval(GameState.enemyMoveInterval);
+    cancelAnimationFrame(GameState.rafId);
 }
 
-function endGame() {
+function endGame(reason = 'timeup') {
     stopGame();
+    SoundEngine.play('game-over');
 
     if (GameState.multiplayer) {
         const p1 = GameState.score, p2 = GameState.score2;
@@ -950,19 +1490,24 @@ function endGame() {
         return;
     }
 
-    // Determine result
-    const won = GameState.score >= 50;
-    
-    document.getElementById('result-icon').textContent = won ? '🏆' : '🧀';
-    document.getElementById('result-title').textContent = won ? 'Cheese Master!' : 'Time\'s Up!';
+    const maxLives = GameState.selectedCharacter === 'hem' ? 4 : 3;
+    if (reason === 'timeup' && GameState.lives === maxLives && GameState.cheeseCollected >= 5) {
+        unlockAchievement('no-hit-clear');
+    }
+
+    const defeated = reason === 'defeated';
+    const won = !defeated && GameState.score >= 50;
+
+    document.getElementById('result-icon').textContent = defeated ? '💀' : (won ? '🏆' : '🧀');
+    document.getElementById('result-title').textContent = defeated ? 'The Cheese Got You!' : (won ? 'Cheese Master!' : 'Time\'s Up!');
     document.getElementById('result-quote').textContent = `"${GameState.resultQuotes[Math.floor(Math.random() * GameState.resultQuotes.length)]}"`;
-    
+
     document.getElementById('final-score').textContent = GameState.score;
     document.getElementById('final-level').textContent = GameState.level;
     document.getElementById('final-cheese').textContent = GameState.cheeseCollected;
-    
+
     showScreen('game-over-screen');
-    
+
     // Show name entry
     setTimeout(() => {
         document.getElementById('name-modal').classList.add('active');
@@ -972,21 +1517,21 @@ function endGame() {
 // --- Leaderboard ---
 function switchLeaderboardTab(difficulty) {
     GameState.difficulty = difficulty;
-    
+
     // Update tab styles
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
     event.target.classList.add('active');
-    
+
     const list = document.getElementById('leaderboard-list');
     list.innerHTML = '';
-    
+
     const entries = GameState.leaderboard[difficulty] || [];
-    
+
     if (entries.length === 0) {
         list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No scores yet. Be the first!</p>';
         return;
     }
-    
+
     entries.slice(0, 10).forEach((entry, index) => {
         const el = document.createElement('div');
         el.className = 'leaderboard-entry';
@@ -1002,27 +1547,95 @@ function switchLeaderboardTab(difficulty) {
 
 function saveScore() {
     const name = document.getElementById('player-name').value.trim() || 'Anonymous';
-    
+
     if (!GameState.leaderboard[GameState.difficulty]) {
         GameState.leaderboard[GameState.difficulty] = [];
     }
-    
+
     GameState.leaderboard[GameState.difficulty].push({
         name: name,
         score: GameState.score,
         level: GameState.level,
         date: new Date().toISOString()
     });
-    
+
     // Sort and keep top 10
     GameState.leaderboard[GameState.difficulty].sort((a, b) => b.score - a.score);
     GameState.leaderboard[GameState.difficulty] = GameState.leaderboard[GameState.difficulty].slice(0, 10);
-    
+
     // Save to localStorage
     localStorage.setItem(`cheese_leaderboard_${GameState.difficulty}`, JSON.stringify(GameState.leaderboard[GameState.difficulty]));
-    
+
     closeModal('name-modal');
     showLeaderboard();
+}
+
+// --- Achievements ---
+function loadCharsPlayed() {
+    try {
+        return new Set(JSON.parse(localStorage.getItem('cheese_achievements_chars_played') || '[]'));
+    } catch {
+        return new Set();
+    }
+}
+
+function recordCharacterPlayed(key) {
+    const charsPlayed = loadCharsPlayed();
+    charsPlayed.add(key);
+    localStorage.setItem('cheese_achievements_chars_played', JSON.stringify([...charsPlayed]));
+    if (charsPlayed.size >= 4) unlockAchievement('roster-complete');
+}
+
+function unlockAchievement(id) {
+    if (GameState.achievements.unlocked[id]) return;
+
+    GameState.achievements.unlocked[id] = new Date().toISOString();
+    localStorage.setItem('cheese_achievements', JSON.stringify(GameState.achievements.unlocked));
+
+    SoundEngine.play('achievement');
+    const def = ACHIEVEMENTS.find(a => a.id === id);
+    if (def) showAchievementToast(def);
+
+    if (GameState.isPlaying) {
+        spawnParticles(GameState.player.x, GameState.player.y, C64.yellow, 16);
+    }
+
+    const modal = document.getElementById('achievements-modal');
+    if (modal && modal.classList.contains('active')) {
+        populateAchievementsGrid();
+    }
+}
+
+function showAchievementToast(def) {
+    const el = document.createElement('div');
+    el.className = 'achievement-toast';
+    el.innerHTML = `
+        <span class="toast-icon">${def.icon}</span>
+        <div>
+            <div class="toast-title">Achievement Unlocked!</div>
+            <div class="toast-name">${def.name}</div>
+        </div>
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+}
+
+function populateAchievementsGrid() {
+    const grid = document.getElementById('achievements-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    ACHIEVEMENTS.forEach(a => {
+        const unlocked = !!GameState.achievements.unlocked[a.id];
+        const card = document.createElement('div');
+        card.className = 'achievement-card' + (unlocked ? ' unlocked' : ' locked');
+        card.innerHTML = `
+            <div class="achievement-icon">${unlocked ? a.icon : '🔒'}</div>
+            <div class="achievement-name">${a.name}</div>
+            <div class="achievement-desc">${a.description}</div>
+        `;
+        grid.appendChild(card);
+    });
 }
 
 // --- Loading Screen ---
@@ -1035,8 +1648,8 @@ window.addEventListener('load', () => {
 
 // --- Window Resize Handler ---
 window.addEventListener('resize', () => {
-    if (GameState.isPlaying && !GameState.isPaused) {
-        setupCanvas();
-        drawGame();
-    }
+    if (!GameState.isPlaying) return;
+    setupCanvas();
+    // The rAF loop skips repaints while paused, so this is the sole manual draw() call outside gameLoop.
+    if (GameState.isPaused) drawGame();
 });

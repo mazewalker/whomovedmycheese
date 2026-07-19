@@ -1,36 +1,39 @@
 /* ===================================
    WHO MOVED MY CHEESE? - THE GAME
-   Modern CSS Stylesheet
+   Commodore 64 Stylesheet
    =================================== */
 
-/* --- CSS Variables & Theme --- */
+/* --- CSS Variables & Theme (Colodore-calibrated C64 palette) --- */
 :root {
-    --primary: #f59e0b;
-    --primary-dark: #d97706;
-    --primary-light: #fbbf24;
-    --secondary: #10b981;
-    --secondary-dark: #059669;
-    --accent: #8b5cf6;
-    --accent-light: #a78bfa;
-    --danger: #ef4444;
-    --warning: #f97316;
-    --info: #3b82f6;
-    
-    --bg-dark: #0f172a;
-    --bg-medium: #1e293b;
-    --bg-light: #334155;
-    --bg-card: rgba(30, 41, 59, 0.8);
-    
-    --text-primary: #f8fafc;
-    --text-secondary: #cbd5e1;
-    --text-muted: #94a3b8;
-    
-    --border-radius: 12px;
-    --border-radius-lg: 20px;
-    --shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.4);
-    
-    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --primary: #EDF171;        /* C64 Yellow */
+    --primary-dark: #C9CB5E;
+    --primary-light: #F5F79B;
+    --secondary: #56AC4D;      /* C64 Green */
+    --secondary-dark: #3E7D38;
+    --accent: #8E3C97;         /* C64 Purple */
+    --accent-light: #A85FB0;
+    --danger: #813338;         /* C64 Red */
+    --warning: #8E5029;        /* C64 Orange */
+    --info: #706DEB;           /* C64 Light Blue */
+
+    --bg-dark: #000000;        /* Black */
+    --bg-medium: #2E2C9B;      /* C64 Blue */
+    --bg-light: #4A4A4A;       /* Dark Grey */
+    --bg-card: #1c1a6e;
+
+    --text-primary: #FFFFFF;
+    --text-secondary: #B2B2B2;
+    --text-muted: #7B7B7B;
+
+    --border-radius: 0;
+    --border-radius-lg: 0;
+    --shadow: 4px 4px 0 #000000;
+    --shadow-lg: 6px 6px 0 #000000;
+
+    --transition: all 0.12s ease-out;
+
+    --c64-cyan: #75CEC8;
+    --c64-light-green: #A9FF9F;
 }
 
 /* --- Reset & Base --- */
@@ -41,11 +44,45 @@
 }
 
 body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: linear-gradient(135deg, var(--bg-dark) 0%, #1a1a2e 50%, var(--bg-dark) 100%);
+    font-family: 'Courier New', Consolas, ui-monospace, monospace;
+    letter-spacing: 0.02em;
+    background: var(--bg-dark);
     color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
+}
+
+h1, h2, h3,
+.btn, .tab, .char-name, .stat-label, .final-label,
+.mute-btn, .toast-title {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* --- CRT / Scanline Overlay --- */
+/* No mix-blend-mode here on purpose: it has known rendering quirks over
+   remote/X11/VNC display paths (e.g. VSCode Remote-SSH port forwarding) where
+   it can render as an opaque layer and black out the whole page. Plain rgba
+   gradients achieve the same subtle scanline/vignette darkening everywhere. */
+#crt-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    background:
+        repeating-linear-gradient(
+            rgba(0, 0, 0, 0) 0,
+            rgba(0, 0, 0, 0) 1px,
+            rgba(0, 0, 0, 0.1) 2px,
+            rgba(0, 0, 0, 0.1) 3px
+        ),
+        radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.25) 100%);
+    animation: crtFlicker 0.15s infinite;
+}
+
+@keyframes crtFlicker {
+    0%, 100% { opacity: 0.97; }
+    50% { opacity: 1; }
 }
 
 /* --- Screen Management --- */
@@ -59,7 +96,7 @@ body {
     justify-content: center;
     align-items: center;
     padding: 2rem;
-    animation: fadeIn 0.5s ease-out;
+    animation: fadeIn 0.3s ease-out;
 }
 
 .screen.active {
@@ -67,13 +104,13 @@ body {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* --- Loading Screen --- */
 #loading-screen {
-    background: linear-gradient(135deg, var(--bg-dark) 0%, #1a1a2e 100%);
+    background: var(--bg-dark);
 }
 
 .loading-content {
@@ -82,7 +119,7 @@ body {
 
 .cheese-loader {
     font-size: 6rem;
-    animation: bounce 1s infinite;
+    animation: bounce 1s steps(4) infinite;
 }
 
 @keyframes bounce {
@@ -91,25 +128,24 @@ body {
 }
 
 .loading-content h1 {
-    font-size: 3rem;
+    font-size: 2.6rem;
     margin: 1rem 0 0.5rem;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--primary);
+    text-shadow: 3px 3px 0 #000000;
 }
 
 .subtitle {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     color: var(--text-secondary);
     margin-bottom: 2rem;
 }
 
 .loader-bar {
     width: 300px;
-    height: 6px;
+    height: 10px;
     background: var(--bg-light);
-    border-radius: 3px;
+    border: 2px solid #000;
+    border-radius: 0;
     overflow: hidden;
     margin: 0 auto;
 }
@@ -117,9 +153,9 @@ body {
 .loader-fill {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
-    border-radius: 3px;
-    animation: loadProgress 2s ease-out forwards;
+    background: var(--primary);
+    border-radius: 0;
+    animation: loadProgress 2s steps(20) forwards;
 }
 
 @keyframes loadProgress {
@@ -128,7 +164,7 @@ body {
 
 /* --- Main Menu --- */
 #main-menu {
-    background: linear-gradient(135deg, var(--bg-dark) 0%, #1a1a2e 50%, var(--bg-dark) 100%);
+    background: var(--bg-dark);
 }
 
 .menu-container {
@@ -142,27 +178,25 @@ body {
 }
 
 .logo-cheese {
-    font-size: 8rem;
+    font-size: 7rem;
     margin-bottom: 1rem;
-    animation: float 3s ease-in-out infinite;
+    animation: float 3s steps(6) infinite;
 }
 
 @keyframes float {
-    0%, 100% { transform: translateY(0) rotate(0deg); }
-    50% { transform: translateY(-15px) rotate(5deg); }
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-15px); }
 }
 
 .logo-section h1 {
-    font-size: 3.5rem;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 50%, var(--warning) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-size: 3rem;
+    color: var(--primary);
+    text-shadow: 4px 4px 0 #000000;
     margin-bottom: 0.5rem;
 }
 
 .tagline {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     color: var(--text-secondary);
     font-style: italic;
 }
@@ -175,7 +209,7 @@ body {
 }
 
 .characters-preview h3 {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     color: var(--text-secondary);
     margin-bottom: 1rem;
 }
@@ -190,8 +224,7 @@ body {
 
 .char-card {
     background: var(--bg-card);
-    backdrop-filter: blur(10px);
-    border: 2px solid transparent;
+    border: 2px solid #000000;
     border-radius: var(--border-radius);
     padding: 1rem;
     cursor: pointer;
@@ -200,15 +233,15 @@ body {
 }
 
 .char-card:hover {
-    transform: translateY(-5px);
+    transform: translate(-2px, -2px);
     border-color: var(--primary);
-    box-shadow: 0 10px 30px rgba(245, 158, 11, 0.3);
+    box-shadow: 4px 4px 0 var(--primary);
 }
 
 .char-card.selected {
     border-color: var(--secondary);
     background: var(--bg-medium);
-    box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);
+    box-shadow: 4px 4px 0 var(--secondary);
 }
 
 .char-icon {
@@ -217,8 +250,8 @@ body {
 }
 
 .char-name {
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: 0.85rem;
+    font-weight: 700;
     color: var(--text-primary);
 }
 
@@ -229,9 +262,10 @@ body {
     justify-content: center;
     gap: 0.5rem;
     padding: 1rem 2rem;
-    font-size: 1.1rem;
-    font-weight: 600;
-    border: 2px solid transparent;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    border: 3px solid #000000;
     border-radius: var(--border-radius);
     cursor: pointer;
     transition: var(--transition);
@@ -239,21 +273,22 @@ body {
 }
 
 .btn:hover {
-    transform: translateY(-2px);
+    transform: translate(-2px, -2px);
     box-shadow: var(--shadow);
 }
 
 .btn:active {
-    transform: translateY(0);
+    transform: translate(2px, 2px);
+    box-shadow: none;
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    color: var(--bg-dark);
+    background: var(--primary);
+    color: #000000;
 }
 
 .btn-primary:hover {
-    background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
+    background: var(--primary-light);
 }
 
 .btn-secondary {
@@ -263,17 +298,22 @@ body {
 
 .btn-secondary:hover {
     background: var(--bg-medium);
-    border: 2px solid var(--primary);
+    border-color: var(--primary);
 }
 
 .btn-small {
     padding: 0.5rem 1rem;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     min-width: auto;
 }
 
 .btn-icon {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
+}
+
+.mute-btn {
+    min-width: auto;
+    padding: 0.6rem 1rem;
 }
 
 /* --- Character Select --- */
@@ -284,12 +324,10 @@ body {
 }
 
 .select-container h2 {
-    font-size: 2.5rem;
+    font-size: 2.2rem;
     margin-bottom: 0.5rem;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--primary);
+    text-shadow: 3px 3px 0 #000000;
 }
 
 .select-subtitle {
@@ -317,18 +355,20 @@ body {
 }
 
 .difficulty-grid h3 {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     margin-bottom: 0.5rem;
 }
 
 .difficulty-grid p {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: var(--text-secondary);
+    text-transform: none;
+    letter-spacing: normal;
 }
 
-.btn-easy { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
-.btn-medium { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: var(--bg-dark); }
-.btn-hard { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
+.btn-easy { background: var(--secondary); color: #000000; }
+.btn-medium { background: var(--primary); color: #000000; }
+.btn-hard { background: var(--danger); color: #ffffff; }
 
 /* --- Game Screen --- */
 #game-screen {
@@ -350,12 +390,18 @@ body {
     align-items: center;
     padding: 1rem 2rem;
     background: var(--bg-medium);
-    border-bottom: 2px solid var(--bg-light);
+    border-bottom: 3px solid #000000;
+}
+
+.header-actions {
+    display: flex;
+    gap: 0.5rem;
 }
 
 .stats {
     display: flex;
     gap: 2rem;
+    flex-wrap: wrap;
 }
 
 .stat-item {
@@ -366,19 +412,18 @@ body {
 }
 
 .stat-icon {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
 }
 
 .stat-value {
-    font-size: 1.8rem;
+    font-size: 1.6rem;
     font-weight: 700;
     color: var(--primary);
 }
 
 .stat-label {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 1px;
 }
 
@@ -386,16 +431,17 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
     padding: 0.75rem 2rem;
     background: var(--bg-medium);
-    border-bottom: 1px solid var(--bg-light);
+    border-bottom: 2px solid #000000;
 }
 
 .quote-box {
     font-style: italic;
     color: var(--text-secondary);
-    font-size: 0.95rem;
-    max-width: 60%;
+    font-size: 0.9rem;
+    max-width: 55%;
 }
 
 #maze-quote {
@@ -409,17 +455,27 @@ body {
     100% { opacity: 0.7; }
 }
 
+.combo-badge {
+    font-weight: 700;
+    color: var(--primary);
+    background: #000000;
+    border: 2px solid var(--primary);
+    padding: 0.25rem 0.75rem;
+    white-space: nowrap;
+}
+
 .cheese-status {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .status-indicator {
     padding: 0.25rem 0.75rem;
-    border-radius: 20px;
+    border-radius: 0;
     background: var(--bg-light);
+    border: 2px solid #000000;
 }
 
 .maze-wrapper {
@@ -429,10 +485,11 @@ body {
     align-items: center;
     position: relative;
     overflow: hidden;
-    background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 100%);
+    background: var(--bg-dark);
 }
 
 #maze-canvas {
+    border: 3px solid var(--text-secondary);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow-lg);
 }
@@ -442,12 +499,12 @@ body {
     bottom: 2rem;
     left: 50%;
     transform: translateX(-50%);
-    background: var(--bg-card);
-    backdrop-filter: blur(10px);
+    background: #000000;
+    border: 2px solid var(--text-secondary);
     padding: 0.75rem 1.5rem;
     border-radius: var(--border-radius);
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     animation: hintPulse 2s ease-in-out infinite;
 }
 
@@ -456,19 +513,58 @@ body {
     50% { opacity: 1; }
 }
 
+/* --- Touch D-Pad --- */
+.touch-dpad {
+    display: none;
+    position: absolute;
+    bottom: 1rem;
+    right: 1rem;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 4px;
+    z-index: 50;
+}
+
+.touch-dpad.visible {
+    display: grid;
+}
+
+@media (pointer: fine) {
+    .touch-dpad { display: none !important; }
+}
+
+.dpad-btn {
+    background: var(--bg-light);
+    border: 2px solid #000000;
+    color: var(--text-primary);
+    font-size: 1.3rem;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+}
+
+.dpad-btn:active {
+    background: var(--primary);
+    color: #000000;
+}
+
+.dpad-up { grid-column: 2; grid-row: 1; }
+.dpad-left { grid-column: 1; grid-row: 2; }
+.dpad-right { grid-column: 3; grid-row: 2; }
+.dpad-down { grid-column: 2; grid-row: 3; }
+
 .game-footer {
     display: flex;
     justify-content: center;
     gap: 1rem;
     padding: 1rem;
     background: var(--bg-medium);
-    border-top: 2px solid var(--bg-light);
+    border-top: 3px solid #000000;
 }
 
 /* --- Pause Screen --- */
 #pause-screen {
-    background: rgba(15, 23, 42, 0.95);
-    backdrop-filter: blur(10px);
+    background: rgba(0, 0, 0, 0.9);
 }
 
 .pause-container {
@@ -477,8 +573,10 @@ body {
 }
 
 .pause-container h2 {
-    font-size: 3rem;
+    font-size: 2.6rem;
     margin-bottom: 1rem;
+    color: var(--primary);
+    text-shadow: 3px 3px 0 #000000;
 }
 
 .pause-container p {
@@ -495,7 +593,7 @@ body {
 
 /* --- Game Over Screen --- */
 #game-over-screen {
-    background: linear-gradient(135deg, var(--bg-dark) 0%, #1a1a2e 100%);
+    background: var(--bg-dark);
 }
 
 .gameover-container {
@@ -505,9 +603,9 @@ body {
 }
 
 .result-icon {
-    font-size: 8rem;
+    font-size: 7rem;
     margin-bottom: 1rem;
-    animation: resultBounce 1s ease-out;
+    animation: resultBounce 0.4s steps(3) ease-out;
 }
 
 @keyframes resultBounce {
@@ -517,19 +615,17 @@ body {
 }
 
 #result-title {
-    font-size: 3rem;
+    font-size: 2.6rem;
     margin-bottom: 1rem;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--primary);
+    text-shadow: 3px 3px 0 #000000;
 }
 
 .result-quote {
     font-style: italic;
     color: var(--text-secondary);
     margin-bottom: 2rem;
-    font-size: 1.1rem;
+    font-size: 1.05rem;
 }
 
 .final-stats {
@@ -547,15 +643,14 @@ body {
 }
 
 .final-value {
-    font-size: 3rem;
+    font-size: 2.6rem;
     font-weight: 700;
     color: var(--primary);
 }
 
 .final-label {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 1px;
 }
 
@@ -573,8 +668,7 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(5px);
+    background: rgba(0, 0, 0, 0.85);
     z-index: 1000;
     justify-content: center;
     align-items: center;
@@ -586,6 +680,7 @@ body {
 
 .modal-content {
     background: var(--bg-medium);
+    border: 3px solid var(--text-secondary);
     border-radius: var(--border-radius-lg);
     padding: 2rem;
     max-width: 700px;
@@ -593,11 +688,11 @@ body {
     max-height: 80vh;
     overflow-y: auto;
     position: relative;
-    animation: modalSlide 0.3s ease-out;
+    animation: modalSlide 0.2s ease-out;
 }
 
 @keyframes modalSlide {
-    from { transform: translateY(-50px); opacity: 0; }
+    from { transform: translateY(-30px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
 }
 
@@ -615,16 +710,13 @@ body {
 
 .modal-close:hover {
     color: var(--text-primary);
-    transform: rotate(90deg);
 }
 
 .modal-content h2 {
-    font-size: 2rem;
+    font-size: 1.8rem;
     margin-bottom: 1.5rem;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--primary);
+    text-shadow: 2px 2px 0 #000000;
 }
 
 .instructions-content {
@@ -640,7 +732,7 @@ body {
 }
 
 .instruction-section h3 {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     margin-bottom: 0.75rem;
     color: var(--primary-light);
 }
@@ -649,6 +741,8 @@ body {
 .instruction-section li {
     color: var(--text-secondary);
     line-height: 1.6;
+    text-transform: none;
+    letter-spacing: normal;
 }
 
 .instruction-section ul {
@@ -669,7 +763,7 @@ body {
 .tab {
     padding: 0.75rem 1.5rem;
     background: var(--bg-light);
-    border: none;
+    border: 2px solid #000000;
     border-radius: var(--border-radius);
     color: var(--text-secondary);
     cursor: pointer;
@@ -678,7 +772,7 @@ body {
 
 .tab.active, .tab:hover {
     background: var(--primary);
-    color: var(--bg-dark);
+    color: #000000;
 }
 
 .leaderboard-list {
@@ -692,30 +786,108 @@ body {
     align-items: center;
     padding: 1rem 1.5rem;
     background: var(--bg-light);
+    border: 2px solid #000000;
     border-radius: var(--border-radius);
     transition: var(--transition);
 }
 
 .leaderboard-entry:hover {
-    transform: translateX(5px);
-    background: var(--bg-card);
+    transform: translateX(4px);
 }
 
 .entry-rank {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     width: 40px;
 }
 
 .entry-name {
     flex: 1;
     text-align: left;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .entry-score {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: var(--primary);
+}
+
+/* --- Achievements --- */
+.achievements-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.achievement-card {
+    background: var(--bg-light);
+    border: 2px solid #000000;
+    padding: 1rem;
+    text-align: center;
+}
+
+.achievement-card.unlocked {
+    border-color: var(--primary);
+    box-shadow: 3px 3px 0 var(--primary);
+}
+
+.achievement-card.locked {
+    opacity: 0.55;
+}
+
+.achievement-icon {
+    font-size: 2.2rem;
+    margin-bottom: 0.5rem;
+}
+
+.achievement-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+    color: var(--text-primary);
+}
+
+.achievement-desc {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.achievement-toast {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--bg-medium);
+    border: 3px solid var(--primary);
+    box-shadow: var(--shadow);
+    padding: 1rem 1.25rem;
+    z-index: 2000;
+    animation: toastSlide 0.25s ease-out, toastFade 0.4s ease-in 3.1s forwards;
+}
+
+@keyframes toastSlide {
+    from { transform: translateX(120%); }
+    to { transform: translateX(0); }
+}
+
+@keyframes toastFade {
+    to { opacity: 0; transform: translateX(20px); }
+}
+
+.toast-icon {
+    font-size: 2rem;
+}
+
+.toast-title {
+    font-size: 0.7rem;
+    color: var(--primary);
+}
+
+.toast-name {
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
 /* --- Name Entry Modal --- */
@@ -731,9 +903,10 @@ body {
 #player-name {
     width: 100%;
     padding: 1rem;
-    font-size: 1.2rem;
+    font-family: inherit;
+    font-size: 1.1rem;
     background: var(--bg-light);
-    border: 2px solid transparent;
+    border: 2px solid #000000;
     border-radius: var(--border-radius);
     color: var(--text-primary);
     margin-bottom: 1rem;
@@ -748,23 +921,25 @@ body {
 /* --- Responsive Design --- */
 @media (max-width: 768px) {
     .logo-cheese { font-size: 5rem; }
-    .logo-section h1 { font-size: 2.5rem; }
-    
+    .logo-section h1 { font-size: 2.2rem; }
+
     .stats { gap: 1rem; }
-    .stat-value { font-size: 1.4rem; }
-    
+    .stat-value { font-size: 1.3rem; }
+
     .difficulty-grid { grid-template-columns: 1fr; }
-    
+
     .final-stats { gap: 1.5rem; }
-    .final-value { font-size: 2rem; }
-    
+    .final-value { font-size: 1.8rem; }
+
     .char-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 480px) {
     .game-header { flex-direction: column; gap: 1rem; }
     .stats { flex-wrap: wrap; justify-content: center; }
-    .quote-box { max-width: 100%; font-size: 0.85rem; }
+    .game-info-bar { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .quote-box { max-width: 100%; font-size: 0.8rem; }
+    .touch-dpad { grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); }
 }
 
 /* --- Scrollbar Styling --- */
@@ -778,7 +953,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
     background: var(--bg-light);
-    border-radius: 4px;
+    border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {

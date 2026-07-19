@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <div id="crt-overlay" aria-hidden="true"></div>
+
     <!-- Loading Screen -->
     <div id="loading-screen" class="screen active">
         <div class="loading-content">
@@ -41,6 +43,10 @@
                 <button class="btn btn-secondary" onclick="showLeaderboard()">
                     <span class="btn-icon">🏆</span> Leaderboard
                 </button>
+                <button class="btn btn-secondary" onclick="showAchievements()">
+                    <span class="btn-icon">🏅</span> Achievements
+                </button>
+                <button class="btn btn-secondary mute-btn" onclick="SoundEngine.toggleMute()">🔊</button>
             </div>
 
             <div class="characters-preview">
@@ -116,14 +122,22 @@
                         <span class="stat-value" id="lives">3</span>
                         <span class="stat-label">Lives</span>
                     </div>
+                    <div class="stat-item" id="shield-badge" style="display: none;">
+                        <span class="stat-icon">🛡️</span>
+                        <span class="stat-label">Shield</span>
+                    </div>
                 </div>
-                <button class="btn btn-small" onclick="pauseGame()">⏸️ Pause</button>
+                <div class="header-actions">
+                    <button class="btn btn-small mute-btn" onclick="SoundEngine.toggleMute()">🔊</button>
+                    <button class="btn btn-small" onclick="pauseGame()">⏸️ Pause</button>
+                </div>
             </div>
 
             <div class="game-info-bar">
                 <div class="quote-box" id="quote-box">
                     <p id="maze-quote">"The faster you let go of old cheese, the sooner you find new cheese."</p>
                 </div>
+                <div class="combo-badge" id="combo-badge" style="display: none;">🔥 x2</div>
                 <div class="cheese-status">
                     <span class="status-label">Cheese Status:</span>
                     <span class="status-indicator" id="cheese-status">🟢 Stable</span>
@@ -133,6 +147,12 @@
             <div class="maze-wrapper">
                 <canvas id="maze-canvas"></canvas>
                 <div class="player-hint" id="player-hint">Use Arrow Keys or WASD to move</div>
+                <div class="touch-dpad" id="touch-dpad">
+                    <button class="dpad-btn dpad-up" data-dir="up" aria-label="Move up">▲</button>
+                    <button class="dpad-btn dpad-left" data-dir="left" aria-label="Move left">◀</button>
+                    <button class="dpad-btn dpad-right" data-dir="right" aria-label="Move right">▶</button>
+                    <button class="dpad-btn dpad-down" data-dir="down" aria-label="Move down">▼</button>
+                </div>
             </div>
 
             <div class="game-footer">
@@ -218,6 +238,23 @@
                         <li><strong>🧀🧀 Double Cheese:</strong> 25 points</li>
                         <li><strong>✨ Golden Cheese:</strong> 50 points (rare!)</li>
                         <li><strong>⚡ Speed Bonus:</strong> Collect cheese quickly for extra points!</li>
+                        <li><strong>🔥 Combo:</strong> Chain collections within 8 seconds for a growing bonus, up to +100%!</li>
+                    </ul>
+                </div>
+                <div class="instruction-section">
+                    <h3>🐺 Enemy Mice</h3>
+                    <ul>
+                        <li><strong>🦇 Wanderer:</strong> Roams randomly - dangerous if you bump into it</li>
+                        <li><strong>🦝 Thief:</strong> Chases you down and steals 15% of your score on contact, then flees</li>
+                        <li><strong>🐺 Guardian:</strong> Patrols near the cheese to intercept you</li>
+                        <li>Any enemy contact costs a life and knocks you back to your spawn corner</li>
+                    </ul>
+                </div>
+                <div class="instruction-section">
+                    <h3>🛡️ Power-ups</h3>
+                    <ul>
+                        <li><strong>🛡️ Shield:</strong> Blocks the next enemy hit entirely</li>
+                        <li><strong>🍎 Apple:</strong> Restores a life, or adds +15 seconds if already at full lives</li>
                     </ul>
                 </div>
                 <div class="instruction-section">
@@ -225,7 +262,8 @@
                     <ul>
                         <li>Watch the cheese status indicator - it warns when cheese is about to move</li>
                         <li>Plan your route ahead - don't just react, anticipate!</li>
-                        <li>Each level gets harder - the maze changes and cheese moves faster</li>
+                        <li>Each level gets harder - the maze changes, gains loops, and cheese moves faster</li>
+                        <li>Losing all your lives ends the game immediately - watch for enemies!</li>
                         <li>"The only thing that is constant is change" - adapt or fall behind!</li>
                     </ul>
                 </div>
@@ -257,6 +295,15 @@
         </div>
     </div>
 
+    <!-- Achievements Modal -->
+    <div id="achievements-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('achievements-modal')">✕</button>
+            <h2>🏅 Achievements</h2>
+            <div class="achievements-grid" id="achievements-grid"></div>
+        </div>
+    </div>
+
     <!-- Name Entry Modal -->
     <div id="name-modal" class="modal">
         <div class="modal-content name-entry">
@@ -267,6 +314,7 @@
         </div>
     </div>
 
+    <script src="sound.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
