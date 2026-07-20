@@ -58,6 +58,7 @@ const GameState = {
     particles: [],
     shake: { remaining: 0, duration: 0, magnitude: 0, x: 0, y: 0 },
     combo: { count: 0, lastCollectTs: 0 },
+    spokenQuotes: new Set(),
     powerups: { active: null, shieldCharges: 0, shieldCharges2: 0 },
     achievements: { unlocked: JSON.parse(localStorage.getItem('cheese_achievements') || '{}') },
     touch: { enabled: false },
@@ -385,6 +386,7 @@ function startGame(difficulty) {
     GameState.level = 1;
     GameState.cheeseCollected = 0;
     GameState.combo = { count: 0, lastCollectTs: 0 };
+    GameState.spokenQuotes = new Set();
     GameState.particles = [];
     GameState.shake = { remaining: 0, duration: 0, magnitude: 0, x: 0, y: 0 };
     GameState.powerups = { active: null, shieldCharges: 0, shieldCharges2: 0 };
@@ -395,9 +397,9 @@ function startGame(difficulty) {
 
     // Set time based on difficulty
     switch (difficulty) {
-        case 'easy': GameState.timeLeft = 90; break;
-        case 'medium': GameState.timeLeft = 60; break;
-        case 'hard': GameState.timeLeft = 45; break;
+        case 'easy': GameState.timeLeft = 150; break;
+        case 'medium': GameState.timeLeft = 100; break;
+        case 'hard': GameState.timeLeft = 75; break;
     }
 
     // Set maze size based on level
@@ -417,6 +419,7 @@ function startGame(difficulty) {
     GameState.touch.enabled = window.matchMedia('(pointer: coarse) and (hover: none)').matches && !GameState.multiplayer;
     const dpad = document.getElementById('touch-dpad');
     if (dpad) dpad.classList.toggle('visible', GameState.touch.enabled);
+    document.body.classList.toggle('touch-controls-active', GameState.touch.enabled);
 
     // Setup canvas
     setupCanvas();
@@ -438,19 +441,18 @@ function startGame(difficulty) {
     cancelAnimationFrame(GameState.rafId);
     GameState.rafId = requestAnimationFrame(gameLoop);
 
-    // Hide hint after 3 seconds
+    // Hide hint after 3 seconds. Skipped entirely on touch -- the on-screen D-pad
+    // is self-explanatory and screen space is tight on mobile.
     const hint = document.getElementById('player-hint');
     if (hint) {
-        hint.textContent = GameState.multiplayer
-            ? 'P1: Arrow Keys · P2: WASD'
-            : GameState.touch.enabled
-                ? 'Swipe or tap the D-pad to move'
-                : 'Use Arrow Keys or WASD to move';
-        hint.style.display = '';
+        if (GameState.touch.enabled) {
+            hint.style.display = 'none';
+        } else {
+            hint.textContent = GameState.multiplayer ? 'P1: Arrow Keys · P2: WASD' : 'Use Arrow Keys or WASD to move';
+            hint.style.display = '';
+            setTimeout(() => { hint.style.display = 'none'; }, 3000);
+        }
     }
-    setTimeout(() => {
-        if (hint) hint.style.display = 'none';
-    }, 3000);
 }
 
 function toggleMultiplayerUI() {
@@ -522,13 +524,28 @@ function placeCheese() {
 }
 
 function setupCanvas() {
-    const reservedHeight = GameState.touch.enabled ? 280 : 200;
-    const maxWidth = window.innerWidth - 40;
-    const maxHeight = window.innerHeight - reservedHeight;
+    // The HUD floats over the maze now instead of reserving bars, so the canvas
+    // can claim nearly the whole viewport. It still needs a vertical margin
+    // (centered top+bottom via the wrapper's flex centering) large enough that
+    // the corner HUD panels don't land directly on top of gameplay -- otherwise
+    // a player spawning in a top/bottom corner can end up hidden behind the HUD.
+    //
+    // On touch devices the quote panel relocates near the top (stacking with the
+    // stats HUD) to free the bottom row for the D-pad, so top/bottom reserves are
+    // asymmetric there. These numbers must stay in sync with the `.touch-controls-active
+    // .maze-wrapper { inset: ... }` rule in styles.css -- that CSS rule shrinks the
+    // wrapper's own box so centering can't place the canvas under the HUD regardless
+    // of this JS calculation, but the two need to agree or the canvas gets clipped.
+    const marginX = 16;
+    const topReserve = GameState.touch.enabled ? 230 : 110;
+    const bottomReserve = GameState.touch.enabled ? 180 : 110;
+    const maxWidth = window.innerWidth - marginX * 2;
+    const maxHeight = window.innerHeight - topReserve - bottomReserve;
 
     const cellWidth = Math.floor(maxWidth / GameState.mazeWidth);
     const cellHeight = Math.floor(maxHeight / GameState.mazeHeight);
-    GameState.cellSize = Math.min(cellWidth, cellHeight, 60);
+    // No upper cap: the maze should always fill the available screen, however large the cells get.
+    GameState.cellSize = Math.max(Math.min(cellWidth, cellHeight), 10);
 
     canvas.width = GameState.mazeWidth * GameState.cellSize;
     canvas.height = GameState.mazeHeight * GameState.cellSize;
@@ -1019,9 +1036,118 @@ function updateShake(dt) {
 }
 
 // --- Game Loop (rendering + particle/shake physics only; setInterval timers own game-logic ticks) ---
+// --- Gamepad / Joystick Support ---
+// Generic enough to cover both "standard"-mapped gamepads (D-pad on buttons 12-15)
+// and simple digital USB joysticks (e.g. Speedlink Competition Pro) that report
+// direction via axes instead. Gamepad index 0 -> Player 1, index 1 -> Player 2
+// (multiplayer only).
+const GAMEPAD_DEADZONE = 0.5;
+const gamepadPrevStart = {};
+const gamepadLastDiagLog = {};
+
+// Simple/older USB joysticks (Speedlink Competition Pro and similar) often
+// don't get recognized by the browser's "standard" gamepad database, so their
+// buttons/axes can land at different indices than a modern controller. Rather
+// than assume one fixed layout, scan every axis pair for deflection (not just
+// axes[0]/[1]) and check both the standard D-pad button range (12-15) and the
+// low button range (0-3) some simple pads use instead.
+function getGamepadDirection(pad) {
+    const btn = (n) => !!(pad.buttons[n] && pad.buttons[n].pressed);
+
+    if (btn(12)) return [0, -1];
+    if (btn(13)) return [0, 1];
+    if (btn(14)) return [-1, 0];
+    if (btn(15)) return [1, 0];
+
+    // Fallback low-index D-pad mapping seen on some non-standard USB joysticks.
+    if (btn(0) && !btn(1) && !btn(2) && !btn(3)) return [0, -1];
+    if (btn(1) && !btn(0) && !btn(2) && !btn(3)) return [0, 1];
+    if (btn(2) && !btn(0) && !btn(1) && !btn(3)) return [-1, 0];
+    if (btn(3) && !btn(0) && !btn(1) && !btn(2)) return [1, 0];
+
+    for (let a = 0; a + 1 < pad.axes.length; a += 2) {
+        const axX = pad.axes[a] || 0;
+        const axY = pad.axes[a + 1] || 0;
+        if (axY < -GAMEPAD_DEADZONE) return [0, -1];
+        if (axY > GAMEPAD_DEADZONE) return [0, 1];
+        if (axX < -GAMEPAD_DEADZONE) return [-1, 0];
+        if (axX > GAMEPAD_DEADZONE) return [1, 0];
+    }
+
+    return null;
+}
+
+function logGamepadDiagnostics(pad, index) {
+    const now = performance.now();
+    const pressed = pad.buttons.map((b, i) => (b.pressed ? i : null)).filter(v => v !== null);
+    const axesActive = pad.axes.some(v => Math.abs(v) > 0.15);
+    if (pressed.length === 0 && !axesActive) return;
+    if (now - (gamepadLastDiagLog[index] || 0) < 500) return; // throttle to twice/sec while active
+    gamepadLastDiagLog[index] = now;
+    console.log(`[gamepad ${index}] "${pad.id}" pressed buttons: [${pressed.join(', ')}] axes: [${pad.axes.map(v => v.toFixed(2)).join(', ')}]`);
+}
+
+function pollGamepads() {
+    if (!navigator.getGamepads) return;
+
+    const pads = navigator.getGamepads();
+    for (let i = 0; i < 2; i++) {
+        const pad = pads[i];
+        if (!pad) continue;
+
+        logGamepadDiagnostics(pad, i);
+
+        if (!GameState.isPlaying) continue;
+
+        const playerNum = i === 0 ? 1 : 2;
+        if (playerNum === 2 && !GameState.multiplayer) continue;
+
+        if (!GameState.isPaused) {
+            const dir = getGamepadDirection(pad);
+            if (dir) handleDirectionInput(dir[0], dir[1], playerNum);
+        }
+
+        // Start button (standard mapping index 9) toggles pause/resume
+        const startPressed = !!(pad.buttons[9] && pad.buttons[9].pressed);
+        if (startPressed && !gamepadPrevStart[i]) {
+            if (GameState.isPlaying && !GameState.isPaused) pauseGame();
+            else if (GameState.isPaused) resumeGame();
+        }
+        gamepadPrevStart[i] = startPressed;
+    }
+}
+
+window.addEventListener('gamepadconnected', (e) => {
+    const g = e.gamepad;
+    console.log(`Gamepad connected at index ${g.index}: "${g.id}" — mapping: "${g.mapping}", ${g.axes.length} axes, ${g.buttons.length} buttons.`);
+    showToast('🎮', 'Controller Connected', g.id);
+});
+
+window.addEventListener('gamepaddisconnected', (e) => {
+    console.log(`Gamepad disconnected at index ${e.gamepad.index}: "${e.gamepad.id}"`);
+});
+
+// Runs independently of the game loop so a plugged-in controller shows up in the
+// console (and via the connected toast) immediately from any screen, including
+// the main menu -- useful for confirming the browser actually sees the device
+// before ever starting a game. Skips work while a game is active since
+// pollGamepads() already covers diagnostics there.
+function diagnosticGamepadLoop() {
+    if (!GameState.isPlaying && navigator.getGamepads) {
+        const pads = navigator.getGamepads();
+        for (let i = 0; i < 2; i++) {
+            if (pads[i]) logGamepadDiagnostics(pads[i], i);
+        }
+    }
+    requestAnimationFrame(diagnosticGamepadLoop);
+}
+requestAnimationFrame(diagnosticGamepadLoop);
+
 function gameLoop(ts) {
     const dt = GameState.lastFrameTime ? ts - GameState.lastFrameTime : 16;
     GameState.lastFrameTime = ts;
+
+    pollGamepads();
 
     if (GameState.isPlaying && !GameState.isPaused) {
         updateShake(dt);
@@ -1372,7 +1498,7 @@ function collectCheese(playerNum = 1) {
 }
 
 function addTime() {
-    GameState.timeLeft += 10;
+    GameState.timeLeft += 15;
 }
 
 function showFloatingText(text, x, y) {
@@ -1437,10 +1563,20 @@ function updateComboBadge() {
     }
 }
 
+// Reads a quote aloud at most once per game session, even if it gets picked
+// again later -- the displayed text can still repeat, just not the narration.
+function speakOnce(quote) {
+    if (GameState.spokenQuotes.has(quote)) return;
+    GameState.spokenQuotes.add(quote);
+    SoundEngine.speak(quote);
+}
+
 function updateQuote() {
     const quoteEl = document.getElementById('maze-quote');
     if (quoteEl) {
-        quoteEl.textContent = `"${GameState.quotes[Math.floor(Math.random() * GameState.quotes.length)]}"`;
+        const quote = GameState.quotes[Math.floor(Math.random() * GameState.quotes.length)];
+        quoteEl.textContent = `"${quote}"`;
+        speakOnce(quote);
     }
 }
 
@@ -1469,6 +1605,12 @@ function stopGame() {
     cancelAnimationFrame(GameState.rafId);
 }
 
+function showResultQuote() {
+    const quote = GameState.resultQuotes[Math.floor(Math.random() * GameState.resultQuotes.length)];
+    document.getElementById('result-quote').textContent = `"${quote}"`;
+    speakOnce(quote);
+}
+
 function endGame(reason = 'timeup') {
     stopGame();
     SoundEngine.play('game-over');
@@ -1478,7 +1620,7 @@ function endGame(reason = 'timeup') {
         document.getElementById('result-icon').textContent = p1 === p2 ? '🤝' : '🏆';
         document.getElementById('result-title').textContent =
             p1 > p2 ? 'Player 1 Wins!' : p2 > p1 ? 'Player 2 Wins!' : "It's a Tie!";
-        document.getElementById('result-quote').textContent = `"${GameState.resultQuotes[Math.floor(Math.random() * GameState.resultQuotes.length)]}"`;
+        showResultQuote();
 
         document.getElementById('final-score').textContent = `${p1} - ${p2}`;
         document.getElementById('final-level').textContent = GameState.level;
@@ -1498,7 +1640,7 @@ function endGame(reason = 'timeup') {
 
     document.getElementById('result-icon').textContent = defeated ? '💀' : (won ? '🏆' : '🧀');
     document.getElementById('result-title').textContent = defeated ? 'The Cheese Got You!' : (won ? 'Cheese Master!' : 'Time\'s Up!');
-    document.getElementById('result-quote').textContent = `"${GameState.resultQuotes[Math.floor(Math.random() * GameState.resultQuotes.length)]}"`;
+    showResultQuote();
 
     document.getElementById('final-score').textContent = GameState.score;
     document.getElementById('final-level').textContent = GameState.level;
@@ -1604,18 +1746,22 @@ function unlockAchievement(id) {
     }
 }
 
-function showAchievementToast(def) {
+function showToast(icon, title, message) {
     const el = document.createElement('div');
     el.className = 'achievement-toast';
     el.innerHTML = `
-        <span class="toast-icon">${def.icon}</span>
+        <span class="toast-icon">${icon}</span>
         <div>
-            <div class="toast-title">Achievement Unlocked!</div>
-            <div class="toast-name">${def.name}</div>
+            <div class="toast-title">${title}</div>
+            <div class="toast-name">${message}</div>
         </div>
     `;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 3500);
+}
+
+function showAchievementToast(def) {
+    showToast(def.icon, 'Achievement Unlocked!', def.name);
 }
 
 function populateAchievementsGrid() {

@@ -95,67 +95,71 @@
     <!-- Game Screen -->
     <div id="game-screen" class="screen">
         <div class="game-container">
-            <div class="game-header">
-                <div class="stats">
-                    <div class="stat-item">
-                        <span class="stat-icon">🧀</span>
-                        <span class="stat-value" id="score">0</span>
-                        <span class="stat-label" id="score-label">Score</span>
-                    </div>
-                    <div class="stat-item" id="p2-stats" style="display: none;">
-                        <span class="stat-icon">🧀</span>
-                        <span class="stat-value" id="score2">0</span>
-                        <span class="stat-label">P2 Score</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-icon">⏱️</span>
-                        <span class="stat-value" id="timer">60</span>
-                        <span class="stat-label">Time</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-icon">📊</span>
-                        <span class="stat-value" id="level">1</span>
-                        <span class="stat-label">Level</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-icon">🏅</span>
-                        <span class="stat-value" id="lives">3</span>
-                        <span class="stat-label">Lives</span>
-                    </div>
-                    <div class="stat-item" id="shield-badge" style="display: none;">
-                        <span class="stat-icon">🛡️</span>
-                        <span class="stat-label">Shield</span>
-                    </div>
-                </div>
-                <div class="header-actions">
-                    <button class="btn btn-small mute-btn" onclick="SoundEngine.toggleMute()">🔊</button>
-                    <button class="btn btn-small" onclick="pauseGame()">⏸️ Pause</button>
-                </div>
-            </div>
-
-            <div class="game-info-bar">
-                <div class="quote-box" id="quote-box">
-                    <p id="maze-quote">"The faster you let go of old cheese, the sooner you find new cheese."</p>
-                </div>
-                <div class="combo-badge" id="combo-badge" style="display: none;">🔥 x2</div>
-                <div class="cheese-status">
-                    <span class="status-label">Cheese Status:</span>
-                    <span class="status-indicator" id="cheese-status">🟢 Stable</span>
-                </div>
-            </div>
-
             <div class="maze-wrapper">
                 <canvas id="maze-canvas"></canvas>
                 <div class="player-hint" id="player-hint">Use Arrow Keys or WASD to move</div>
-                <div class="touch-dpad" id="touch-dpad">
-                    <button class="dpad-btn dpad-up" data-dir="up" aria-label="Move up">▲</button>
-                    <button class="dpad-btn dpad-left" data-dir="left" aria-label="Move left">◀</button>
-                    <button class="dpad-btn dpad-right" data-dir="right" aria-label="Move right">▶</button>
-                    <button class="dpad-btn dpad-down" data-dir="down" aria-label="Move down">▼</button>
+            </div>
+
+            <!-- Positioned relative to game-container (full viewport), not maze-wrapper,
+                 so it stays anchored to the real screen corner even when maze-wrapper's
+                 own box shrinks to keep the canvas clear of the HUD on touch devices. -->
+            <div class="touch-dpad" id="touch-dpad">
+                <button class="dpad-btn dpad-up" data-dir="up" aria-label="Move up">▲</button>
+                <button class="dpad-btn dpad-left" data-dir="left" aria-label="Move left">◀</button>
+                <button class="dpad-btn dpad-right" data-dir="right" aria-label="Move right">▶</button>
+                <button class="dpad-btn dpad-down" data-dir="down" aria-label="Move down">▼</button>
+            </div>
+
+            <!-- Layered HUD: floats over the maze instead of reserving its own bars -->
+            <div class="hud hud-stats">
+                <div class="stat-item">
+                    <span class="stat-icon">🧀</span>
+                    <span class="stat-value" id="score">0</span>
+                    <span class="stat-label" id="score-label">Score</span>
+                </div>
+                <div class="stat-item" id="p2-stats" style="display: none;">
+                    <span class="stat-icon">🧀</span>
+                    <span class="stat-value" id="score2">0</span>
+                    <span class="stat-label">P2 Score</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-icon">⏱️</span>
+                    <span class="stat-value" id="timer">60</span>
+                    <span class="stat-label">Time</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-icon">📊</span>
+                    <span class="stat-value" id="level">1</span>
+                    <span class="stat-label">Level</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-icon">🏅</span>
+                    <span class="stat-value" id="lives">3</span>
+                    <span class="stat-label">Lives</span>
+                </div>
+                <div class="stat-item" id="shield-badge" style="display: none;">
+                    <span class="stat-icon">🛡️</span>
+                    <span class="stat-label">Shield</span>
                 </div>
             </div>
 
-            <div class="game-footer">
+            <div class="hud hud-controls">
+                <button class="btn btn-small mute-btn" onclick="SoundEngine.toggleMute()">🔊</button>
+                <button class="btn btn-small" onclick="pauseGame()">⏸️ Pause</button>
+            </div>
+
+            <div class="hud hud-quote" id="quote-box">
+                <p id="maze-quote">"The faster you let go of old cheese, the sooner you find new cheese."</p>
+                <div class="hud-quote-meta">
+                    <div class="combo-badge" id="combo-badge" style="display: none;">🔥 x2</div>
+                    <div class="cheese-status">
+                        <span class="status-label">Cheese Status:</span>
+                        <span class="status-indicator" id="cheese-status">🟢 Stable</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hud hud-footer">
                 <button class="btn btn-small" onclick="showMainMenu()">🏠 Menu</button>
                 <button class="btn btn-small" onclick="restartGame()">🔄 Restart</button>
             </div>
@@ -219,7 +223,8 @@
                     <ul>
                         <li><strong>Arrow Keys / WASD:</strong> Move your character</li>
                         <li><strong>Space:</strong> Pause the game</li>
-                        <li><strong>2 Player:</strong> Player 1 uses Arrow Keys, Player 2 uses WASD &mdash; race to grab each cheese first!</li>
+                        <li><strong>Gamepad / USB Joystick:</strong> D-pad or stick to move, Start button to pause/resume &mdash; plug in before or during play</li>
+                        <li><strong>2 Player:</strong> Player 1 uses Arrow Keys (or gamepad 1), Player 2 uses WASD (or gamepad 2) &mdash; race to grab each cheese first!</li>
                     </ul>
                 </div>
                 <div class="instruction-section">

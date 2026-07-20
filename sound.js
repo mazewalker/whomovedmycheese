@@ -85,6 +85,16 @@ const SoundEngine = (() => {
         if (fn) fn();
     }
 
+    function speak(text) {
+        if (muted || !('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel(); // don't let quotes stack/overlap
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 0.95;
+        utter.pitch = 1;
+        utter.volume = 0.8;
+        window.speechSynthesis.speak(utter);
+    }
+
     function updateMuteButtons() {
         document.querySelectorAll('.mute-btn').forEach(btn => {
             btn.textContent = muted ? '🔇' : '🔊';
@@ -95,6 +105,7 @@ const SoundEngine = (() => {
         muted = !muted;
         localStorage.setItem('cheese_sound_muted', String(muted));
         if (masterGain) masterGain.gain.value = muted ? 0 : 0.5;
+        if (muted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
         updateMuteButtons();
         return muted;
     }
@@ -103,7 +114,7 @@ const SoundEngine = (() => {
         return muted;
     }
 
-    return { init, play, toggleMute, isMuted, updateMuteButtons };
+    return { init, play, speak, toggleMute, isMuted, updateMuteButtons };
 })();
 
 window.SoundEngine = SoundEngine;
